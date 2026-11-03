@@ -1,3 +1,6 @@
+using DensityInterface: funcdensity
+using InfluenceFunctions: fit_density, _density_at_quantile
+
 @testset "mean(x)" begin
     check_against_ad(p -> wmean(p, X), value_and_influence(mean, X), mean(X))
     check_shapes(mean, X)
@@ -110,4 +113,57 @@ end
     check_against_ad(Tcor, value_and_influence(cor, X, Y), cor(X, Y))
     @inferred value_and_influence(cor, X, Y)
     @test_throws DimensionMismatch influence(cor, OffsetArray(X, -3), Y)
+end
+
+@testset "quantile" begin
+    v, ψ = value_and_influence(quantile, X, 0.9; density = D)
+    @test v ≈ quantile(X, 0.9)
+    @test ψ ≈ (0.9 .- (X .<= v)) ./ pdf(D, v)
+    @test influence(quantile, X, 0.9; density = t -> pdf(D, t)) ≈ ψ
+    @test influence(quantile, X, 0.9; density = funcdensity(t -> pdf(D, t))) ≈ ψ
+    v0, ψ0 = value_and_influence(quantile, X, 0.9; alpha = 0.0, beta = 0.0, density = D)
+    @test v0 ≈ quantile(X, 0.9; alpha = 0.0, beta = 0.0)
+    @test ψ0 ≈ (0.9 .- (X .<= v0)) ./ pdf(D, v0)
+    g = fit_density(QuantileSpacing(), X)
+    @test influence(quantile, X, 0.9) ≈ (0.9 .- (X .<= v)) ./ _density_at_quantile(g, v, 0.9)
+    @test influence(quantile, X, 0.9; density = ConstantDensity(0.4)) ≈ (0.9 .- (X .<= v)) ./ 0.4
+    @test influence(quantile, sort(X), 0.9; sorted = true) ≈ influence(quantile, X, 0.9)[sortperm(X)]
+
+    x = rand(StableRNG(2), D, 100_000)                                  # asymptotic variance
+    for p in (0.1, 0.5, 0.9)
+        @test mean(abs2, influence(quantile, x, p)) ≈ p * (1 - p) / pdf(D, quantile(D, p))^2 rtol = 0.1
+    end
+
+    check_shapes(quantile, X, 0.3; vector_only = true)                  # Statistics.quantile takes only vectors
+    @test influence(quantile, 1.0:10.0, 0.3) == influence(quantile, collect(1.0:10.0), 0.3)   # ranges work
+    atom = [zeros(300); rand(StableRNG(5), 700) .+ 0.5]                 # quantile inside an atom
+    @test all(iszero, influence(quantile, atom, 0.2))
+    @test all(iszero, influence(quantile, -atom, 0.8))                  # mirror image: same answer
+    @test all(isfinite, influence(quantile, rand(StableRNG(4), 1:5, 1000), 0.3))   # ties
+    @test all(iszero, influence(quantile, fill(2.0, 10), 0.3))          # constant data
+    for p in (0.0, 1.0, -0.1, 1.5)
+        @test_throws DomainError influence(quantile, X, p)
+    end
+    @test_throws ArgumentError influence(quantile, Float64[], 0.5)
+end
+
+@testset "median" begin
+    for x in (X, X[1:35])                                               # even and odd n
+        v, ψ = value_and_influence(median, x)
+        @test v ≈ median(x)
+        @test ψ ≈ influence(quantile, x, 0.5)
+    end
+    check_shapes(median, X)
+    @test eltype(influence(median, [1, 2, 3, 4])) === Float64
+    A, B = reshape(X, 9, 4), reshape(X, 3, 4, 3)
+    for (x, dims) in ((A, 1), (A, 2), (A, (1, 2)), (A, :), (B, (1, 3)))
+        check_dims(median, x; dims)
+    end
+    check_dims(median, A; dims = 1, extra = (; density = D))
+    @test influence(median, [3.0]) == [0.0]                             # n = 1
+    @test all(isfinite, influence(median, rand(StableRNG(4), 1:5, 1000)))   # ties
+    @test all(iszero, influence(median, fill(2.0, 10)))                 # constant data
+    @test all(isinf, influence(median, X; density = Returns(0.0)))
+    @test_throws ArgumentError influence(median, X; density = 42)
+    @test_throws ArgumentError influence(median, Float64[])
 end

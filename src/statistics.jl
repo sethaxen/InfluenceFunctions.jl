@@ -103,6 +103,46 @@ function value_and_influence(
     return ρ, ψ
 end
 
+##########
+# quantile
+##########
+
+function value_and_influence(
+        ::typeof(Statistics.quantile), x::AbstractArray{<:Real}, p::Real;
+        density = QuantileSpacing(), kwargs...,
+    )
+    0 < p < 1 || throw(DomainError(p, "the influence function of a quantile requires 0 < p < 1"))
+    q = Statistics.quantile(x, p; kwargs...)
+    g = fit_density(density, x)
+    return q, _quantile_influence(x, q, p, _density_at_quantile(g, q, p))
+end
+
+# Influence of the quantile `q` at level `τ`, given the density `fq` at `q`.
+_quantile_influence(x, q, τ, fq) = (τ .- (x .<= q)) ./ fq
+
+########
+# median
+########
+
+function value_and_influence(
+        ::typeof(Statistics.median), x::AbstractArray{<:Real};
+        density = QuantileSpacing(), kwargs...,
+    )
+    m = Statistics.median(x; kwargs...)
+    τ = convert(float(eltype(m)), 1 // 2)
+    dims = get(kwargs, :dims, :)
+    if dims isa Colon
+        fm = _density_at_quantile(fit_density(density, x), m, τ)
+    else
+        # Each slice is its own sample, with its own density fit at its own median.
+        fm = map(CartesianIndices(m)) do I
+            slice = view(x, ntuple(d -> d in dims ? Colon() : I[d], ndims(x))...)
+            return _density_at_quantile(fit_density(density, slice), m[I], τ)
+        end
+    end
+    return m, _quantile_influence(x, m, τ, fm)
+end
+
 #######
 # utils
 #######

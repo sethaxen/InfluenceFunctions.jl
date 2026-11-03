@@ -33,26 +33,36 @@ function inferred_value_and_influence(f, x, args...; kwargs...)
 end
 
 # Shapes and types: ψ keeps the data's array type and axes, equals the flattened
-# result, and has the floating-point type of the estimator's value.
-function check_shapes(f, x::AbstractVector, args...; kwargs...)
+# result, and has the floating-point type of the estimator's value. With `vector_only`
+# (for estimators that, like `Statistics.quantile`, accept only vectors), only vector
+# inputs are checked.
+function check_shapes(f, x::AbstractVector, args...; vector_only = false, kwargs...)
     v, ψ = inferred_value_and_influence(f, x, args...; kwargs...)
     @test eltype(ψ) === typeof(v)
-    for sz in ((N ÷ 4, 4), (N ÷ 12, 4, 3))
-        vX, ψX = value_and_influence(f, reshape(x, sz), args...; kwargs...)
-        @test vX ≈ v
-        @test size(ψX) == sz
-        @test vec(ψX) ≈ ψ
+    if vector_only
+        xd = DimArray(x, Dim{:draw}(1:length(x)))
+        ψd = influence(f, xd, args...; kwargs...)
+        @test ψd isa DimArray
+        @test dims(ψd) == dims(xd)
+        @test parent(ψd) ≈ ψ
+    else
+        for sz in ((N ÷ 4, 4), (N ÷ 12, 4, 3))
+            vX, ψX = value_and_influence(f, reshape(x, sz), args...; kwargs...)
+            @test vX ≈ v
+            @test size(ψX) == sz
+            @test vec(ψX) ≈ ψ
+        end
+        xo = OffsetArray(reshape(x, N ÷ 4, 4), -2, 5)
+        ψo = influence(f, xo, args...; kwargs...)
+        @test ψo isa OffsetArray
+        @test axes(ψo) == axes(xo)
+        @test vec(parent(ψo)) ≈ ψ
+        xd = DimArray(reshape(x, N ÷ 4, 4), (Dim{:draw}(1:(N ÷ 4)), Dim{:chain}(1:4)))
+        ψd = influence(f, xd, args...; kwargs...)
+        @test ψd isa DimArray
+        @test dims(ψd) == dims(xd)
+        @test vec(parent(ψd)) ≈ ψ
     end
-    xo = OffsetArray(reshape(x, N ÷ 4, 4), -2, 5)
-    ψo = influence(f, xo, args...; kwargs...)
-    @test ψo isa OffsetArray
-    @test axes(ψo) == axes(xo)
-    @test vec(parent(ψo)) ≈ ψ
-    xd = DimArray(reshape(x, N ÷ 4, 4), (Dim{:draw}(1:(N ÷ 4)), Dim{:chain}(1:4)))
-    ψd = influence(f, xd, args...; kwargs...)
-    @test ψd isa DimArray
-    @test dims(ψd) == dims(xd)
-    @test vec(parent(ψd)) ≈ ψ
     # All-Float32 inputs. With mixed precision (Float32 data, Float64 center) Statistics.var
     # itself infers a Union, so inference is only checked for matching precisions.
     f32(a) = a isa AbstractFloat ? Float32(a) : a
@@ -63,15 +73,16 @@ function check_shapes(f, x::AbstractVector, args...; kwargs...)
 end
 
 # `dims`: the value is `f(x; dims)`, ψ has the axes of `x`, and the influence values of each
-# slice equal those of `f` applied to that slice alone.
-function check_dims(f, x::AbstractArray; dims, kwargs...)
-    v, ψ = value_and_influence(f, x; dims, kwargs...)
+# slice equal those of `f` applied to that slice alone. `extra` holds keywords that only
+# `value_and_influence` takes (e.g. `density`).
+function check_dims(f, x::AbstractArray; dims, extra = (;), kwargs...)
+    v, ψ = value_and_influence(f, x; dims, extra..., kwargs...)
     @test v ≈ f(x; dims, kwargs...)
     @test axes(ψ) == axes(x)
     reduced = dims isa Colon ? (1:ndims(x)) : dims
     for I in CartesianIndices(axes(v))   # a single empty index when `v` is a scalar
         idx = ntuple(d -> d in reduced ? Colon() : I[d], ndims(x))
-        @test vec(ψ[idx...]) ≈ influence(f, vec(x[idx...]); kwargs...)
+        @test vec(ψ[idx...]) ≈ influence(f, vec(x[idx...]); extra..., kwargs...)
     end
     return nothing
 end
