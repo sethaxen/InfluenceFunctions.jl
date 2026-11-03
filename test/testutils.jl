@@ -75,3 +75,9 @@ function check_dims(f, x::AbstractArray; dims, kwargs...)
     end
     return nothing
 end
+
+# A user-defined density estimator: any type plus a fit_density method, no supertype.
+struct ConstantDensity
+    c::Float64
+end
+InfluenceFunctions.fit_density(d::ConstantDensity, x) = Returns(d.c)

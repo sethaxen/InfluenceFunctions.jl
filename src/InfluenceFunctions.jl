@@ -1,8 +1,13 @@
 module InfluenceFunctions
 
+using DensityInterface: DensityInterface
 using Statistics: Statistics
+using StatsFuns: StatsFuns
 
-export influence, value_and_influence
+export influence, value_and_influence, QuantileSpacing
+@static if VERSION >= v"1.11.0-DEV.469"
+    eval(Meta.parse("public fit_density, HallSheatherBandwidth"))
+end
 
 """
     value_and_influence(f, args...; kwargs...) -> (value, ψ)
@@ -63,6 +68,7 @@ julia> influence(mean, [1.0, 2.0, 6.0])
 """
 influence(f, args...; kwargs...) = last(value_and_influence(f, args...; kwargs...))
 
+include("density.jl")
 include("statistics.jl")
 
 end
