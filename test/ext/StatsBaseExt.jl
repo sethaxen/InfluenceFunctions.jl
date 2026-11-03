@@ -66,3 +66,55 @@ end
     @test all(iszero, influence(variation, fill(2.0, 10)))        # constant data: V = 0, defined
     @test all(iszero, influence(variation, fill(2.0, 10), 2.0))
 end
+
+@testset "percentile" begin
+    v, ψ = value_and_influence(percentile, X, 90; density = D)
+    @test v ≈ percentile(X, 90)
+    @test ψ ≈ influence(quantile, X, 90 * 0.01; density = D)
+    # the same level as StatsBase (p * 0.01, which differs from p / 100 in the last bit for some p)
+    @test all(p -> first(value_and_influence(percentile, X, p; density = D)) == percentile(X, p), 1:99)
+    for p in (0, 100, -1, 150)
+        @test_throws DomainError influence(percentile, X, p)
+    end
+    check_shapes(percentile, X, 30; vector_only = true)   # via Statistics.quantile: vectors only
+end
+
+@testset "iqr" begin
+    v, ψ = value_and_influence(iqr, X)
+    @test v ≈ iqr(X)
+    @test ψ ≈ influence(quantile, X, 0.75) .- influence(quantile, X, 0.25)
+    check_shapes(iqr, X)
+    @test all(isfinite, influence(iqr, rand(StableRNG(4), 1:5, 1000)))   # ties
+end
+
+function mad_expected(x, dens; center, normalize)
+    m = center === nothing ? median(x) : center
+    s = mad(x; center = m, normalize = false)
+    fp, fm = dens(m + s), dens(m - s)
+    ψm = center === nothing ? (0.5 .- (x .<= m)) ./ dens(m) : zero(x)
+    k = normalize ? inv(quantile(Normal(), 3 / 4)) : 1.0
+    return k .* ((0.5 .- (abs.(x .- m) .<= s)) .- (fp - fm) .* ψm) ./ (fp + fm)
+end
+
+@testset "mad" begin
+    for normalize in (true, false), center in (nothing, C)
+        v, ψ = value_and_influence(mad, X; center, normalize, density = D)
+        @test v ≈ mad(X; center, normalize)
+        @test ψ ≈ mad_expected(X, t -> pdf(D, t); center, normalize)
+    end
+    xn = rand(StableRNG(3), Normal(), 100_000)                          # asymptotic variance
+    @test mean(abs2, influence(mad, xn; normalize = true)) ≈ 1.360459304311955 rtol = 0.1
+    xg = rand(StableRNG(2), D, 100_000)
+    @test mean(abs2, influence(mad, xg; normalize = false)) ≈
+        mean(abs2, mad_expected(xg, t -> pdf(D, t); center = nothing, normalize = false)) rtol = 0.1
+    check_shapes(mad, X; normalize = true)
+    for x in (X, Float32.(X))                                           # the value matches StatsBase exactly
+        @test first(value_and_influence(mad, x; normalize = true)) === mad(x; normalize = true)
+    end
+    @test all(isfinite, influence(mad, rand(StableRNG(4), 1:5, 1000); normalize = true))   # ties
+    # m̂ and m̂ ± ŝ inside atoms: the limiting form gives 0, not NaN
+    for z in (rand(StableRNG(2), 0:2, 1000), [zeros(400); ones(600)], fill(2.0, 10), [3.0])
+        @test all(iszero, influence(mad, z; normalize = true))
+    end
+    @test_throws MethodError influence(mad, X; constant = 1.0)            # deprecated in StatsBase
+end

@@ -116,11 +116,11 @@ function value_and_influence(
     0 < p < 1 || throw(DomainError(p, "the influence function of a quantile requires 0 < p < 1"))
     q = Statistics.quantile(x, p; kwargs...)
     g = fit_density(density, x)
-    return q, _quantile_influence(x, q, p, _density_at_quantile(g, q, p))
+    return q, _quantile_influence.(x, q, p, _density_at_quantile(g, q, p))
 end
 
-# Influence of the quantile `q` at level `τ`, given the density `fq` at `q`.
-_quantile_influence(x, q, τ, fq) = (τ .- (x .<= q)) ./ fq
+# Influence at `t` of the quantile `q` at level `τ`, given the density `fq` at `q`.
+_quantile_influence(t, q, τ, fq) = (τ - (t <= q)) / fq
 
 ########
 # median
@@ -142,7 +142,7 @@ function value_and_influence(
             return _density_at_quantile(fit_density(density, slice), m[I], τ)
         end
     end
-    return m, _quantile_influence(x, m, τ, fm)
+    return m, _quantile_influence.(x, m, τ, fm)
 end
 
 #######

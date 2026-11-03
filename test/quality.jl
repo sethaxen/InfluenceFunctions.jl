@@ -17,6 +17,9 @@ const EXT_CALLS = Any[
     (kurtosis, (X, C), (;)),
     (variation, (X,), (; corrected = false)),
     (variation, (X, C), (;)),
+    (percentile, (X, 30), (;)),
+    (iqr, (X,), (;)),
+    (mad, (X,), (; normalize = true)),
 ]
 
 # JET's analysis is tied to compiler internals, so skip it on prereleases.
