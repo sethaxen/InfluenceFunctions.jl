@@ -68,7 +68,10 @@ end
         check_dims(std, x; dims, corrected)
     end
     @test influence(std, A; dims = 1, mean = fill(C, 1, 4))[:, 3] ≈ influence(std, A[:, 3]; mean = C)
-    @test all(isnan, influence(std, fill(2.0, 10)))      # 0/0
+    # constant data: the value is 0 and moving mass onto any observation changes nothing
+    @test all(iszero, influence(std, fill(2.0, 10)))
+    @test all(iszero, influence(std, [fill(2.0, 5) X[1:5]]; dims = 1)[:, 1])   # a constant slice
+    @test all(isnan, influence(std, [3.0]))              # n = 1, corrected: the value is NaN
 end
 
 @testset "varm" begin
@@ -91,6 +94,7 @@ end
     check_shapes(stdm, X, C)
     A = reshape(X, 9, 4)
     @test influence(stdm, A, fill(C, 1, 4); dims = 1)[:, 3] ≈ influence(stdm, A[:, 3], C)
+    @test all(iszero, influence(stdm, fill(2.0, 10), 2.0))   # constant data at the center
 end
 
 @testset "cov" begin

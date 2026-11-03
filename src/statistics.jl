@@ -65,7 +65,9 @@ _std_value_and_influence(x, c, corrected::Bool, dims) = _std_about(x, c, correct
 function _std_about(x, c, corrected, dims)
     s = Statistics.std(x; corrected, mean = c, dims)
     b = _bessel_factor(eltype(s), _slice_length(x, dims), corrected)
-    return s, (b .* abs2.(x .- c) ./ s .- s) ./ 2    # ψ_var / 2s, with ψ_var = b |x - c|² - s²
+    # ψ = ψ_var / 2s, with ψ_var = b |x - c|² - s². Where s = 0, every value in the slice
+    # equals the center, so moving mass onto any of them changes nothing: ψ = 0, not 0/0.
+    return s, @. ifelse(iszero(s), zero(s), (b * abs2(x - c) / s - s) / 2)
 end
 
 #####

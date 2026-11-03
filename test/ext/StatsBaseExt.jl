@@ -63,4 +63,6 @@ end
     check_shapes(variation, X)
     check_shapes(variation, X, C)
     @test_throws MethodError influence(variation, X; dims = 1)    # StatsBase.variation has no dims
+    @test all(iszero, influence(variation, fill(2.0, 10)))        # constant data: V = 0, defined
+    @test all(iszero, influence(variation, fill(2.0, 10), 2.0))
 end
