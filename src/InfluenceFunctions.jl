@@ -1,5 +1,7 @@
 module InfluenceFunctions
 
+using Statistics: Statistics
+
 export influence, value_and_influence
 
 """
@@ -60,5 +62,7 @@ julia> influence(mean, [1.0, 2.0, 6.0])
 ```
 """
 influence(f, args...; kwargs...) = last(value_and_influence(f, args...; kwargs...))
+
+include("statistics.jl")
 
 end
