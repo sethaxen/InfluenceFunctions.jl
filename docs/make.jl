@@ -1,17 +1,17 @@
 using InfluenceFunctions
 using Documenter
 
-DocMeta.setdocmeta!(InfluenceFunctions, :DocTestSetup, :(using InfluenceFunctions); recursive=true)
+DocMeta.setdocmeta!(InfluenceFunctions, :DocTestSetup, :(using InfluenceFunctions); recursive = true)
 
 makedocs(;
-    modules=[InfluenceFunctions],
-    authors="Seth Axen <seth@sethaxen.com> and contributors",
-    sitename="InfluenceFunctions.jl",
-    format=Documenter.HTML(;
-        edit_link="main",
-        assets=String[],
+    modules = [InfluenceFunctions],
+    authors = "Seth Axen <seth@sethaxen.com> and contributors",
+    sitename = "InfluenceFunctions.jl",
+    format = Documenter.HTML(;
+        edit_link = "main",
+        assets = String[],
     ),
-    pages=[
+    pages = [
         "Home" => "index.md",
     ],
 )

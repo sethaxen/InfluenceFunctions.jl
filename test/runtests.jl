@@ -1,14 +1,16 @@
 using InfluenceFunctions
 using Test
-using Aqua
-using JET
+
+# Run a subset with: Pkg.test(; test_args=["statistics"])
+const TEST_GROUPS = ["InfluenceFunctions", "density", "statistics", "ext/StatsBaseExt"]
+const SELECTED = isempty(ARGS) ? [TEST_GROUPS; "quality"] : ARGS
+
+isfile(joinpath(@__DIR__, "testutils.jl")) && include("testutils.jl")
 
 @testset "InfluenceFunctions.jl" begin
-    @testset "Code quality (Aqua.jl)" begin
-        Aqua.test_all(InfluenceFunctions)
+    for group in SELECTED
+        @testset "$group" begin
+            include("$group.jl")
+        end
     end
-    @testset "Code linting (JET.jl)" begin
-        JET.test_package(InfluenceFunctions; target_defined_modules = true)
-    end
-    # Write your tests here.
 end

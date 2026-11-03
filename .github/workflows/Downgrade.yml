@@ -1,0 +1,42 @@
+name: Downgrade
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+  workflow_dispatch:
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+jobs:
+  test:
+    name: Downgrade - Julia ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.version }}
+      # Resolves the package and test environments together at their compat lower bounds.
+      # It warns that `docs` is an extra workspace project it does not resolve; that is expected.
+      - uses: julia-actions/julia-downgrade-compat@v2
+        with:
+          mode: deps
+          projects: .,test
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          allow_reresolve: false
+          force_latest_compatible_version: false

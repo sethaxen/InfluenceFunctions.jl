@@ -1,0 +1,227 @@
+module StatsBaseExt
+
+using InfluenceFunctions: InfluenceFunctions
+using Statistics: Statistics
+using StatsBase: StatsBase
+using StatsFuns: StatsFuns
+
+#########
+# geomean
+#########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.geomean), x::AbstractArray{<:Real},
+    )
+    m = Statistics.mean(log, x)
+    G = exp(m)
+    return G, G .* (log.(x) .- m)
+end
+
+##########
+# harmmean
+##########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.harmmean), x::AbstractArray{<:Real},
+    )
+    H = inv(Statistics.mean(inv, x))
+    return H, H .* (1 .- H ./ x)
+end
+
+#########
+# genmean
+#########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.genmean), x::AbstractArray{<:Real}, p::Real,
+    )
+    iszero(p) && return InfluenceFunctions.value_and_influence(StatsBase.geomean, x)
+    S = Statistics.mean(t -> float(t)^p, x)
+    M = S^inv(p)    # as StatsBase.genmean computes it
+    return M, (M / p) .* ((float.(x) .^ p) ./ S .- 1)
+end
+
+########
+# moment
+########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.moment), x::AbstractArray{<:Real}, k,
+    )
+    return _moment_value_and_influence(x, k, Statistics.mean(x), true)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.moment), x::AbstractArray{<:Real}, k, m::Real,
+    )
+    return _moment_value_and_influence(x, k, m, false)
+end
+
+function _moment_value_and_influence(x, k, c, center_est)
+    mₖ = StatsBase.moment(x, k, c)
+    mₖ₋₁ = center_est ? StatsBase.moment(x, k - 1, c) : zero(mₖ)
+    return mₖ, _moment_influence.(x .- c, k, mₖ, mₖ₋₁, center_est)
+end
+
+# Influence of the k-th moment about a center `c` at the deviation `d = t - c`, given the
+# moments mₖ and mₖ₋₁ about `c`. When `c` is the estimated mean, the last term accounts for
+# estimating it.
+_moment_influence(d, k, mₖ, mₖ₋₁, center_est) = d^k - mₖ - center_est * (k * mₖ₋₁ * d)
+
+##########
+# skewness
+##########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.skewness), x::AbstractArray{<:Real}
+    )
+    return _skewness_value_and_influence(x, Statistics.mean(x), true)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.skewness), x::AbstractArray{<:Real}, m::Real
+    )
+    return _skewness_value_and_influence(x, m, false)
+end
+
+# g = m₃ / m₂^(3/2), so ψ = ψ₃ / m₂^(3/2) - (3g/2) ψ₂ / m₂.
+function _skewness_value_and_influence(x, c, center_est)
+    g = StatsBase.skewness(x, c)
+    m₁, m₂, m₃ = (StatsBase.moment(x, k, c) for k in 1:3)
+    ψ = broadcast(x) do t
+        d = t - c
+        ψ₂ = _moment_influence(d, 2, m₂, m₁, center_est)
+        ψ₃ = _moment_influence(d, 3, m₃, m₂, center_est)
+        return (ψ₃ / sqrt(m₂) - 3g / 2 * ψ₂) / m₂
+    end
+    return g, ψ
+end
+
+##########
+# kurtosis
+##########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.kurtosis), x::AbstractArray{<:Real}
+    )
+    return _kurtosis_value_and_influence(x, Statistics.mean(x), true)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.kurtosis), x::AbstractArray{<:Real}, m::Real
+    )
+    return _kurtosis_value_and_influence(x, m, false)
+end
+
+# Excess kurtosis κ = m₄ / m₂² - 3, so ψ = ψ₄ / m₂² - 2(κ + 3) ψ₂ / m₂.
+function _kurtosis_value_and_influence(x, c, center_est)
+    κ = StatsBase.kurtosis(x, c)
+    m₁, m₂, m₃, m₄ = (StatsBase.moment(x, k, c) for k in 1:4)
+    ψ = broadcast(x) do t
+        d = t - c
+        ψ₂ = _moment_influence(d, 2, m₂, m₁, center_est)
+        ψ₄ = _moment_influence(d, 4, m₄, m₃, center_est)
+        return (ψ₄ / m₂ - 2 * (κ + 3) * ψ₂) / m₂
+    end
+    return κ, ψ
+end
+
+###########
+# variation
+###########
+
+# V = s / μ̂, so ψ = (ψ_std - V (x - μ̂)) / μ̂. StatsBase checks the keywords.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}; kwargs...
+    )
+    V = StatsBase.variation(x; kwargs...)
+    μ = Statistics.mean(x)
+    _, ψ = InfluenceFunctions.value_and_influence(Statistics.std, x; kwargs...)
+    ψ .= (ψ .- V .* (x .- μ)) ./ μ
+    return V, ψ
+end
+
+# V = s / m, so ψ = ψ_stdm / m.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}, m::Real; kwargs...
+    )
+    V = StatsBase.variation(x, m; kwargs...)
+    _, ψ = InfluenceFunctions.value_and_influence(Statistics.stdm, x, m; kwargs...)
+    ψ ./= m
+    return V, ψ
+end
+
+############
+# percentile
+############
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.percentile), x::AbstractArray{<:Real}, p::Real; kwargs...
+    )
+    # p * 0.01 as in StatsBase.percentile; p / 100 differs in the last bit for some p
+    return InfluenceFunctions.value_and_influence(Statistics.quantile, x, p * 0.01; kwargs...)
+end
+
+#####
+# iqr
+#####
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.iqr), x::AbstractArray{<:Real};
+        density = InfluenceFunctions.QuantileSpacing()
+    )
+    ql, qu = Statistics.quantile(x, (0.25, 0.75))
+    g = InfluenceFunctions.fit_density(density, x)
+    fl = InfluenceFunctions._density_at_quantile(g, ql, 0.25)
+    fu = InfluenceFunctions._density_at_quantile(g, qu, 0.75)
+    ψ = InfluenceFunctions._quantile_influence.(x, qu, 0.75, fu) .-
+        InfluenceFunctions._quantile_influence.(x, ql, 0.25, fl)
+    return qu - ql, ψ
+end
+
+#####
+# mad
+#####
+
+# With ŝ the unnormalized MAD about the center m̂ and f₀, f₊, f₋ the densities at m̂, m̂ + ŝ,
+# m̂ - ŝ, ψ = k [(½ - 1[|x - m̂| ≤ ŝ]) / (f₊ + f₋) - r ψ_m], where r = (f₊ - f₋) / (f₊ + f₋) and
+# ψ_m is the median's influence (0 for a given center). This form takes the formula's
+# limits when f₊ or f₋ is infinite (an atom at m̂ ± ŝ), where it would be Inf/Inf.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mad), x::AbstractArray{<:Real};
+        center = nothing, normalize = nothing, density = InfluenceFunctions.QuantileSpacing(),
+    )
+    m = center === nothing ? Statistics.median(x) : center
+    s = StatsBase.mad(x; center = m, normalize = false)
+    k = normalize === false ? one(s) : _mad_constant(typeof(s))    # `nothing` means true in StatsBase 0.34
+    τ = oftype(float(s), 1 // 2)
+    g = InfluenceFunctions.fit_density(density, x)
+    f₊ = g(m + s)
+    f₋ = g(m - s)
+    # A given center has no influence (r = 0, and f₀ is then unused). Each variable the
+    # closure below captures is assigned once, so it isn't boxed.
+    f₀ = center === nothing ? InfluenceFunctions._density_at_quantile(g, m, τ) : one(f₊)
+    r = center === nothing ? _density_ratio(f₊, f₋) : zero(f₊)
+    ψ = broadcast(x) do t
+        ψ_med = InfluenceFunctions._quantile_influence(t, m, τ, f₀)
+        return k * ((τ - (abs(t - m) <= s)) / (f₊ + f₋) - r * ψ_med)
+    end
+    return k * s, ψ
+end
+
+# 1/Φ⁻¹(3/4), which makes the MAD a consistent estimator of the standard deviation for normal
+# data. Computed in at least Float64 precision and then rounded, so it is correctly rounded
+# (as StatsBase's constant is) also for Float32; the compiler folds it to a literal.
+function _mad_constant(::Type{T}) where {T <: Real}
+    S = promote_type(Float64, float(T))
+    return float(T)(inv(StatsFuns.norminvcdf(S(3 // 4))))
+end
+
+# (f₊ - f₋) / (f₊ + f₋), taking its limits when either density is infinite.
+function _density_ratio(f₊, f₋)
+    f₊ == f₋ && return zero(f₊)
+    (isinf(f₊) || isinf(f₋)) && return sign(f₊ - f₋)
+    return (f₊ - f₋) / (f₊ + f₋)
+end
+
+end
