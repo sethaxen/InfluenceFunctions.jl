@@ -53,7 +53,10 @@ function check_shapes(f, x::AbstractVector, args...; kwargs...)
     @test ψd isa DimArray
     @test dims(ψd) == dims(xd)
     @test vec(parent(ψd)) ≈ ψ
-    v32, ψ32 = inferred_value_and_influence(f, Float32.(x), args...; kwargs...)
+    # All-Float32 inputs. With mixed precision (Float32 data, Float64 center) Statistics.var
+    # itself infers a Union, so inference is only checked for matching precisions.
+    f32(a) = a isa AbstractFloat ? Float32(a) : a
+    v32, ψ32 = inferred_value_and_influence(f, Float32.(x), map(f32, args)...; map(f32, values(kwargs))...)
     @test eltype(ψ32) === typeof(v32)
     @test isapprox(ψ32, ψ; rtol = 1.0e-3)
     return nothing

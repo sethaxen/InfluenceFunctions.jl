@@ -1,3 +1,7 @@
+######
+# mean
+######
+
 function value_and_influence(::typeof(Statistics.mean), x::AbstractArray{<:Real}; dims = :)
     μ = Statistics.mean(x; dims)
     return μ, x .- μ
@@ -7,3 +11,108 @@ function value_and_influence(::typeof(Statistics.mean), f, x::AbstractArray; dim
     μ = Statistics.mean(f, x; dims)
     return μ, f.(x) .- μ
 end
+
+##########
+# var/varm
+##########
+
+function value_and_influence(
+        ::typeof(Statistics.var), x::AbstractArray{<:Real};
+        corrected::Bool = true, mean = nothing, dims = :
+    )
+    return _var_value_and_influence(x, mean, corrected, dims)
+end
+
+function value_and_influence(
+        ::typeof(Statistics.varm), x::AbstractArray{<:Real}, m::Union{Real, AbstractArray{<:Real}};
+        corrected::Bool = true, dims = :
+    )
+    return _var_value_and_influence(x, m, corrected, dims)
+end
+
+function _var_value_and_influence(x, ::Nothing, corrected::Bool, dims)
+    return _var_value_and_influence(x, Statistics.mean(x; dims), corrected, dims)
+end
+_var_value_and_influence(x, c, corrected::Bool, dims) = _var_about(x, c, corrected, dims)
+function _var_about(x, c, corrected, dims)
+    v = Statistics.var(x; corrected, mean = c, dims)
+    b = _bessel_factor(eltype(v), _slice_length(x, dims), corrected)
+    return v, b .* abs2.(x .- c) .- v
+end
+
+##########
+# std/stdm
+##########
+
+function value_and_influence(
+        ::typeof(Statistics.std), x::AbstractArray{<:Real};
+        corrected::Bool = true, mean = nothing, dims = :
+    )
+    return _std_value_and_influence(x, mean, corrected, dims)
+end
+
+function value_and_influence(
+        ::typeof(Statistics.stdm), x::AbstractArray{<:Real}, m::Union{Real, AbstractArray{<:Real}};
+        corrected::Bool = true, dims = :
+    )
+    return _std_value_and_influence(x, m, corrected, dims)
+end
+
+function _std_value_and_influence(x, ::Nothing, corrected::Bool, dims)
+    return _std_value_and_influence(x, Statistics.mean(x; dims), corrected, dims)
+end
+_std_value_and_influence(x, c, corrected::Bool, dims) = _std_about(x, c, corrected, dims)
+function _std_about(x, c, corrected, dims)
+    s = Statistics.std(x; corrected, mean = c, dims)
+    b = _bessel_factor(eltype(s), _slice_length(x, dims), corrected)
+    return s, (b .* abs2.(x .- c) ./ s .- s) ./ 2    # ψ_var / 2s, with ψ_var = b |x - c|² - s²
+end
+
+#####
+# cov
+#####
+
+function value_and_influence(
+        ::typeof(Statistics.cov), x::AbstractVector{<:Real}, y::AbstractVector{<:Real};
+        corrected::Bool = true
+    )
+    μx = Statistics.mean(x)
+    μy = Statistics.mean(y)
+    Ĉ = _mean_cross(x, μx, y, μy)    # uncorrected covariance
+    b = _bessel_factor(typeof(Ĉ), length(x), corrected)
+    v = b * Ĉ
+    return v, b .* (x .- μx) .* (y .- μy) .- v
+end
+
+#####
+# cor
+#####
+
+function value_and_influence(
+        ::typeof(Statistics.cor), x::AbstractVector{<:Real}, y::AbstractVector{<:Real}
+    )
+    μx = Statistics.mean(x)
+    σx = Statistics.std(x; mean = μx, corrected = false)
+    μy = Statistics.mean(y)
+    σy = Statistics.std(y; mean = μy, corrected = false)
+    ρ = clamp(_mean_cross(x, μx, y, μy) / (σx * σy), -1, 1)    # clamped, as Statistics.cor does
+    ψ = broadcast(x, y) do s, t
+        s̃, t̃ = (s - μx) / σx, (t - μy) / σy
+        return s̃ * t̃ - ρ / 2 * (s̃^2 + t̃^2)
+    end
+    return ρ, ψ
+end
+
+#######
+# utils
+#######
+
+# Bessel factor `n/(n-1)` when `corrected`, else 1, in type `T`.
+_bessel_factor(::Type{T}, n::Integer, corrected::Bool) where {T} = corrected ? T(n) / T(n - 1) : one(T)
+
+# Number of observations in each slice reduced over `dims`.
+_slice_length(x::AbstractArray, ::Colon) = length(x)
+_slice_length(x::AbstractArray, dims) = prod(d -> size(x, d), dims; init = 1)
+
+# Mean of (x - μx)(y - μy)
+_mean_cross(x, μx, y, μy) = Statistics.mean(i -> (x[i] - μx) * (y[i] - μy), eachindex(x, y))
