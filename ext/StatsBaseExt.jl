@@ -225,6 +225,40 @@ function _density_ratio(f₊, f₋)
     return (f₊ - f₋) / (f₊ + f₋)
 end
 
+############################
+# mean_and_var, mean_and_std
+############################
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_var), x::AbstractArray{<:Real}; corrected::Bool = true
+    )
+    return _mean_and_value_and_influence(Statistics.var, x, :, corrected)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_var), x::AbstractArray{<:Real}, dim::Int; corrected::Bool = true
+    )
+    return _mean_and_value_and_influence(Statistics.var, x, dim, corrected)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_std), x::AbstractArray{<:Real}; corrected::Bool = true
+    )
+    return _mean_and_value_and_influence(Statistics.std, x, :, corrected)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_std), x::AbstractArray{<:Real}, dim::Int; corrected::Bool = true
+    )
+    return _mean_and_value_and_influence(Statistics.std, x, dim, corrected)
+end
+
+function _mean_and_value_and_influence(f, x, dims, corrected)
+    μ, ψμ = InfluenceFunctions.value_and_influence(Statistics.mean, x; dims)
+    v, ψ = InfluenceFunctions.value_and_influence(f, x; corrected, mean = μ, dims)
+    return (μ, v), (ψμ, ψ)
+end
+
 ######################
 # weighted cov and cor
 ######################

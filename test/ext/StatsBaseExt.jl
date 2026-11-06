@@ -126,6 +126,37 @@ end
     @test_throws MethodError influence(mad, X; constant = 1.0)            # deprecated in StatsBase
 end
 
+@testset "$f" for (f, g) in ((mean_and_var, var), (mean_and_std, std))
+    A = reshape(X, 9, 4)
+    for corrected in (true, false)
+        v, ψ = value_and_influence(f, X; corrected)
+        @test v == f(X; corrected)
+        @test ψ == (influence(mean, X), influence(g, X; corrected))
+        for dim in (1, 2)
+            v, ψ = value_and_influence(f, A, dim; corrected)
+            @test v == f(A, dim; corrected)
+            @test ψ == (influence(mean, A; dims = dim), influence(g, A; dims = dim, corrected))
+        end
+    end
+    xo = OffsetArray(A, -2, 5)
+    @test all(ψ -> axes(ψ) == axes(xo), influence(f, xo))
+    xd = DimArray(A, (Dim{:draw}(1:9), Dim{:chain}(1:4)))
+    @test all(ψ -> dims(ψ) == dims(xd), influence(f, xd))
+    @test all(ψ -> dims(ψ) == dims(xd), influence(f, xd, 1))
+    @inferred value_and_influence(f, X)
+    @inferred value_and_influence(f, A, 1)
+    @test_throws MethodError influence(f, A; dims = 1)   # StatsBase takes the dimension positionally
+    @test_throws MethodError influence(f, X; density = nothing)
+end
+
+@testset "delta method" begin
+    v, ψ = value_and_influence(mean_and_std, X)
+    g = ForwardDiff.gradient(w -> w[2] / w[1], collect(v))
+    @test g[1] .* ψ[1] .+ g[2] .* ψ[2] ≈ influence(variation, X)
+    v, ψ = value_and_influence(quantile, X, (0.25, 0.75))
+    @test ψ[2] .- ψ[1] ≈ influence(iqr, X)
+end
+
 @testset "weights are not a second variable" begin
     w = fweights(ones(Int, N))
     @test_throws MethodError influence(cov, M, w)

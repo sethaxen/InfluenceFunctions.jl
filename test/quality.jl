@@ -21,6 +21,10 @@ const EXT_CALLS = Any[
     (percentile, (X, [25, 75]), (;)),
     (iqr, (X,), (;)),
     (mad, (X,), (; normalize = true)),
+    (mean_and_var, (X,), (;)),
+    (mean_and_var, (reshape(X, 9, 4), 1), (;)),
+    (mean_and_std, (X,), (;)),
+    (mean_and_std, (reshape(X, 9, 4), 1), (;)),
 ]
 
 # JET's analysis is tied to compiler internals, so skip it on prereleases.
