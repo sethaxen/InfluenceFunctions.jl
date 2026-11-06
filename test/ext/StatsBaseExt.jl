@@ -87,6 +87,7 @@ end
         @test_throws DomainError influence(percentile, X, p)
     end
     check_shapes(percentile, X, 30; vector_only = true)   # via Statistics.quantile: vectors only
+    @test_throws MethodError influence(percentile, X, 30; alpha = 0.0)    # percentile takes no quantile keywords
 end
 
 @testset "iqr" begin
