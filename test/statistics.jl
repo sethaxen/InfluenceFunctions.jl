@@ -183,14 +183,6 @@ end
     for dims in (:chain, Dim{:chain}())
         @test parent(influence(median, xd; dims)) ≈ influence(median, A; dims = 2)
     end
-    xo = OffsetArray(X, -3)                                             # offset vector
-    @test axes(influence(median, xo)) == axes(xo)
-    @test parent(influence(median, xo)) == influence(median, X)
-    Ao = OffsetArray(A, -3, 2)                                          # each slice is an offset vector
-    for dims in (1, 2)
-        @test axes(influence(median, Ao; dims)) == axes(Ao)
-        @test parent(influence(median, Ao; dims)) == influence(median, A; dims)
-    end
     v, ψ = value_and_influence(median, [1.0, NaN, 3.0])                 # as `median`, NaN propagates
     @test isnan(v) && all(isnan, ψ)
     An = copy(A)

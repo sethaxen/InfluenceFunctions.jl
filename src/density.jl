@@ -130,7 +130,7 @@ struct QuantileSpacing{B}
 end
 QuantileSpacing(; bandwidth = HallSheatherBandwidth()) = QuantileSpacing(bandwidth)
 
-fit_density(est::QuantileSpacing, x) = _SpacingDensity(sort!(vec(collect(x))), est.bandwidth)
+fit_density(est::QuantileSpacing, x) = _SpacingDensity(sort(vec(x)), est.bandwidth)
 
 struct _SpacingDensity{V <: AbstractVector, B}
     xs::V    # sorted, 1-based
@@ -141,8 +141,9 @@ function (g::_SpacingDensity)(t)
     (; xs) = g
     T = float(eltype(xs))
     (t < first(xs) || t > last(xs)) && return zero(T)    # no data out here
-    ixmin = searchsortedfirst(xs, t)
-    ixmax = searchsortedlast(xs, t)
+    i1 = firstindex(xs)
+    ixmin = searchsortedfirst(xs, t) - i1 + 1
+    ixmax = searchsortedlast(xs, t) - i1 + 1
     τ = T((ixmin - 1 + ixmax) // (2 * length(xs)))    # mid-rank level
     return _density_at_level(g, τ)
 end
