@@ -179,6 +179,10 @@ end
         check_dims(median, x; dims)
     end
     check_dims(median, A; dims = 1, extra = (; density = D))
+    xd = DimArray(A, (Dim{:draw}(1:9), Dim{:chain}(1:4)))               # other `dims` forms that `median` takes
+    for dims in (:chain, Dim{:chain}())
+        @test parent(influence(median, xd; dims)) ≈ influence(median, A; dims = 2)
+    end
     xo = OffsetArray(X, -3)                                             # offset vector
     @test axes(influence(median, xo)) == axes(xo)
     @test parent(influence(median, xo)) == influence(median, X)

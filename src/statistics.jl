@@ -138,7 +138,7 @@ function value_and_influence(
     else
         # Each slice is its own sample, with its own density fit at its own median.
         fm = map(CartesianIndices(m)) do I
-            slice = view(x, ntuple(d -> d in dims ? Colon() : I[d], ndims(x))...)
+            slice = view(x, ntuple(d -> size(m, d) == size(x, d) ? I[d] : Colon(), ndims(x))...)
             return _density_at_quantile(fit_density(density, slice), m[I], τ)
         end
     end
