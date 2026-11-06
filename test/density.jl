@@ -49,6 +49,7 @@ end
     h = _bandwidth(b, 0.5, 2)
     @test h > 1
     @test _density_at_quantile(fit_density(QuantileSpacing(; bandwidth = b), [1.0, 2.0]), 1.5, 0.5) ≈ h / 2
+    @test fit_density(QuantileSpacing(), OffsetArray(X, -3))(5.0) == fit_density(QuantileSpacing(), X)(5.0)
     gx = @inferred fit_density(QuantileSpacing(), X)
     @inferred gx(5.0)
     @inferred _density_at_quantile(gx, 5.0, 0.5)

@@ -169,6 +169,14 @@ end
         check_dims(median, x; dims)
     end
     check_dims(median, A; dims = 1, extra = (; density = D))
+    xo = OffsetArray(X, -3)                                             # offset vector
+    @test axes(influence(median, xo)) == axes(xo)
+    @test parent(influence(median, xo)) == influence(median, X)
+    Ao = OffsetArray(A, -3, 2)                                          # each slice is an offset vector
+    for dims in (1, 2)
+        @test axes(influence(median, Ao; dims)) == axes(Ao)
+        @test parent(influence(median, Ao; dims)) == influence(median, A; dims)
+    end
     @test influence(median, [3.0]) == [0.0]                             # n = 1
     @test all(isfinite, influence(median, rand(StableRNG(4), 1:5, 1000)))   # ties
     @test all(iszero, influence(median, fill(2.0, 10)))                 # constant data
