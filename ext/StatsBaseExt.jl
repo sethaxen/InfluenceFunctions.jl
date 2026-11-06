@@ -209,10 +209,8 @@ function InfluenceFunctions.value_and_influence(
     k = normalize === false ? one(s) : _mad_constant(typeof(s))    # `nothing` means true in StatsBase 0.34
     τ = oftype(float(s), 1 // 2)
     g = InfluenceFunctions.fit_density(density, x)
-    lo, hi = extrema(x)
-    tol = 4 * eps(float(max(abs(m), s)))    # bounds the rounding error of m ± s
-    f₊ = g(_undo_overshoot(m + s, lo, hi, tol))
-    f₋ = g(_undo_overshoot(m - s, lo, hi, tol))
+    f₊ = g(m + s)
+    f₋ = g(m - s)
     # A given center has no influence (r = 0, and f₀ is then unused). Each variable the
     # closure below captures is assigned once, so it isn't boxed.
     f₀ = center === nothing ? InfluenceFunctions._density_at_quantile(g, m, τ) : one(f₊)
@@ -231,10 +229,6 @@ function _mad_constant(::Type{T}) where {T <: Real}
     S = promote_type(Float64, float(T))
     return float(T)(inv(StatsFuns.norminvcdf(S(3 // 4))))
 end
-
-# `t`, moved into the range [lo, hi] of the data if it is outside by at most `tol`. m̂ ± ŝ can
-# lie on the data but round to just past it, where a density estimate is 0.
-_undo_overshoot(t, lo, hi, tol) = lo - tol <= t <= hi + tol ? clamp(t, lo, hi) : t
 
 # (f₊ - f₋) / (f₊ + f₋), taking its limits when either density is infinite.
 function _density_ratio(f₊, f₋)
