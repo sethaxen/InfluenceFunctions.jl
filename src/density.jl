@@ -103,10 +103,11 @@ The level `τ` is:
     ``(\\hat F_n(t^-) + \\hat F_n(t))/2``. This choice is the package's own: it equals
     ``\\hat F_n(t)`` away from ties and treats tied minima and maxima alike.
 
-Also the package's own choices: levels are clamped to ``[1/(2n), 1 - 1/(2n)]``, where
-``\\tilde F_n^{-1}`` is not flat, and a window that lies inside an atom of the data gives an
-infinite density, so a quantile inside an atom has zero influence. Near the extremes, `h`
-is halved until ``[\\tau - h, \\tau + h] \\subseteq [0, 1]``, as in R's quantreg.
+Also the package's own choices: the density is 0 outside the range of the data, levels are
+clamped to ``[1/(2n), 1 - 1/(2n)]``, where ``\\tilde F_n^{-1}`` is not flat, and a window that
+lies inside an atom of the data gives an infinite density, so a quantile inside an atom has
+zero influence. Near the extremes, `h` is halved until
+``[\\tau - h, \\tau + h] \\subseteq [0, 1]``, as in R's quantreg.
 
 It is the default because it needs only the sorted data and a closed-form bandwidth, and
 unlike a kernel density estimate it stays accurate near the boundary of the support and on
@@ -139,6 +140,7 @@ end
 function (g::_SpacingDensity)(t)
     (; xs) = g
     T = float(eltype(xs))
+    (t < first(xs) || t > last(xs)) && return zero(T)    # no data out here
     ixmin = searchsortedfirst(xs, t)
     ixmax = searchsortedlast(xs, t)
     τ = T((ixmin - 1 + ixmax) // (2 * length(xs)))    # mid-rank level

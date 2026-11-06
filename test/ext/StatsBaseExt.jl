@@ -132,5 +132,17 @@ end
     for z in (rand(StableRNG(2), 0:2, 1000), [zeros(400); ones(600)], fill(2.0, 10), [3.0])
         @test all(iszero, influence(mad, z; normalize = true))
     end
+    # a center below the data puts m̂ - ŝ outside it, where the density is 0
+    c = minimum(X) - 1
+    s = mad(X; center = c, normalize = false)
+    f₊ = InfluenceFunctions.fit_density(QuantileSpacing(), X)(c + s)
+    @test influence(mad, X; center = c, normalize = false) ≈ (0.5 .- (abs.(X .- c) .<= s)) ./ f₊
+    # m̂ ± ŝ on the data but rounded to just past it (0.9 - (0.9 - 0.01) != 0.01) is not outside it
+    @test all(iszero, influence(mad, fill(0.01, 10); center = 0.9, normalize = false))
+    rng = StableRNG(6)
+    @test all(1:1000) do _     # randn, as rand's values all lie on a grid where this is exact
+        a, c = randn(rng), randn(rng)
+        return all(iszero, influence(mad, fill(a, 4); center = c, normalize = false))
+    end
     @test_throws MethodError influence(mad, X; constant = 1.0)            # deprecated in StatsBase
 end

@@ -31,7 +31,7 @@ end
     @test g(50.0) ≈ 1 / 100     # interior: level 0.495, 0.1 / (55.0 - 45.0)
     @test g(1.0) ≈ 1 / 50       # level 0.005, h halved to 0.003125; the EQF's flat end doubles it (documented)
     @test g(100.0) ≈ 1 / 50
-    @test g(-5.0) ≈ 1 / 50      # outside the data: level clamped to 1/(2n)
+    @test g(0.5) == g(100.5) == 0                                       # outside the data
     @test _density_at_quantile(g, 50.5, 0.5) ≈ 1 / 100                  # nominal level
     @test isfinite(_density_at_quantile(fit_density(QuantileSpacing(), X), 0.0, 0.001))   # level clamped
     @test fit_density(QuantileSpacing(), fill(2.0, 10))(2.0) == Inf      # point mass
