@@ -308,4 +308,47 @@ function InfluenceFunctions.value_and_influence(
     return S, ψ
 end
 
+##########
+# cumulant
+##########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.cumulant), x::AbstractArray{<:Real},
+        k::Union{Integer, AbstractRange{<:Integer}}
+    )
+    return _cumulant_value_and_influence(x, k, Statistics.mean(x), true)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.cumulant), x::AbstractArray{<:Real},
+        k::Union{Integer, AbstractRange{<:Integer}}, m::Real
+    )
+    return _cumulant_value_and_influence(x, k, m, false)
+end
+
+# Cumulants are polynomials in the moments mᵢ about `c`, so each ψ is a polynomial in the
+# deviation `d = t - c`. Differentiating the recursion in StatsBase.cumulant,
+#     κᵢ = mᵢ - ∑ⱼ binomial(i - 1, j) mⱼ κᵢ₋ⱼ,
+# on the coefficients of those polynomials leaves one pass over `x` for each order returned.
+function _cumulant_value_and_influence(x, k, c, center_est)
+    v = StatsBase.cumulant(x, k, c)    # also checks the orders
+    K = maximum(k)
+    κ = StatsBase.cumulant(x, 1:K, c)
+    m = [StatsBase.moment(x, i, c) for i in 1:K]
+    ψκ = [zeros(eltype(κ), K + 1) for _ in 1:K]    # ψκ[i][j + 1] multiplies dʲ in the ψ of κᵢ
+    ψm = [zeros(eltype(κ), K + 1) for _ in 1:K]    # the same for mᵢ
+    ψκ[1][2] = center_est
+    for i in 2:K
+        ψm[i][i + 1] = 1
+        ψm[i][1] = -m[i]
+        ψm[i][2] = -center_est * i * m[i - 1]
+        ψκ[i] .= ψm[i]
+        for j in 2:(i - 2)
+            ψκ[i] .-= binomial(i - 1, j) .* (ψm[j] .* κ[i - j] .+ m[j] .* ψκ[i - j])
+        end
+    end
+    influences(a) = broadcast(t -> evalpoly(t - c, a), x)
+    return v, k isa Integer ? influences(ψκ[k]) : map(influences, ψκ[k])
+end
+
 end

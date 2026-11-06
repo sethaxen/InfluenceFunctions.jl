@@ -216,6 +216,32 @@ end
     @test_throws MethodError influence(scattermat, M; density = nothing)
 end
 
+@testset "cumulant" begin
+    function T(p, c)
+        m₂, m₃, m₄, m₅, m₆ = (wmean(p, (X .- c) .^ i) for i in 2:6)
+        return (c, m₂, m₃, m₄ - 3 * m₂^2, m₅ - 10 * m₂ * m₃, m₆ - 15 * m₂ * m₄ - 10 * m₃^2 + 30 * m₂^3)
+    end
+    for k in 1:6
+        check_against_ad(p -> T(p, wmean(p, X))[k], value_and_influence(cumulant, X, k), cumulant(X, k))
+        check_against_ad(p -> T(p, C)[k], value_and_influence(cumulant, X, k, C), cumulant(X, k, C))
+    end
+    check_shapes(cumulant, X, 4)
+    check_shapes(cumulant, X, 4, C)
+    v, ψ = value_and_influence(cumulant, X, 2:2:6)          # orders given as a range
+    @test v == cumulant(X, 2:2:6)
+    @test size(ψ) == (3,)
+    @test ψ[2] == influence(cumulant, X, 4)
+    @test influence(cumulant, X, 1:3, C)[3] == influence(cumulant, X, 3, C)
+    @inferred value_and_influence(cumulant, X, 1:4)
+    @inferred value_and_influence(cumulant, X, 1:4, C)
+    (κ₂, κ₄), (ψ₂, ψ₄) = value_and_influence(cumulant, X, 2:2:4)    # kurtosis is κ₄ / κ₂²
+    @test ψ₄ ./ κ₂^2 .- (2 * κ₄ / κ₂^3) .* ψ₂ ≈ influence(kurtosis, X)
+    @test_throws ArgumentError influence(cumulant, X, 0)
+    @test_throws ArgumentError influence(cumulant, X, 0:2)
+    @test_throws MethodError influence(cumulant, X, [1, 2])  # StatsBase takes an integer or a range
+    @test_throws MethodError influence(cumulant, X, 2, pweights(ones(N)))
+end
+
 @testset "weights are not a second variable" begin
     w = fweights(ones(Int, N))
     @test_throws MethodError influence(cov, M, w)
