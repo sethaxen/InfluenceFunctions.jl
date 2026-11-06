@@ -32,6 +32,13 @@ const EXT_CALLS = Any[
     (cumulant, (X, 4), (;)),
     (cumulant, (X, 1:4), (;)),
     (cumulant, (X, 1:4, C), (;)),
+    (proportions, ([1, 2, 2],), (;)),
+    (proportions, ([1, 2, 2], 3), (;)),
+    (proportions, ([1, 2, 2], 1:3), (;)),
+    (proportions, ([1, 2, 2], [1, 1, 2]), (;)),
+    (proportions, ([1, 2, 2], [1, 1, 2], 2), (;)),
+    (proportions, ([1, 2, 2], [1, 1, 2], (2, 2)), (;)),
+    (proportions, ([1, 2, 2], [1, 1, 2], (1:2, 1:2)), (;)),
 ]
 
 # JET's analysis is tied to compiler internals, so skip it on prereleases.
