@@ -92,3 +92,12 @@ struct ConstantDensity
     c::Float64
 end
 InfluenceFunctions.fit_density(d::ConstantDensity, x) = Returns(d.c)
+
+# A user-defined density estimator that counts how many times it is fit.
+struct CountingDensity
+    fits::Base.RefValue{Int}
+end
+function InfluenceFunctions.fit_density(d::CountingDensity, x)
+    d.fits[] += 1
+    return Returns(0.5)
+end

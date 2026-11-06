@@ -151,6 +151,54 @@ end
     @test_throws ArgumentError influence(quantile, Float64[], 0.5)
 end
 
+@testset "quantile at several levels" begin
+    expected(p, q) = (p .- (X .<= q)) ./ pdf(D, q)
+    levels = (
+        [0.1, 0.5, 0.9], [0.1 0.25 0.5; 0.6 0.75 0.9], reshape([0.1, 0.2, 0.3, 0.4], 2, 1, 2),
+        0.1:0.4:0.9, fill(0.5),
+    )
+    for ps in levels
+        v, ψ = value_and_influence(quantile, X, ps; density = D)
+        @test v == quantile(X, ps)
+        @test axes(ψ) == axes(v)
+        @test all(I -> ψ[I] ≈ expected(ps[I], v[I]), CartesianIndices(v))
+    end
+    v, ψ = value_and_influence(quantile, X, (0.25, 0.75); density = D)
+    @test v === quantile(X, (0.25, 0.75))
+    @test ψ isa Tuple{Vector{Float64}, Vector{Float64}}
+    @test ψ[2] ≈ expected(0.75, v[2])
+    @test influence(quantile, X, ()) === ()
+
+    ps = [0.1 0.25 0.5; 0.6 0.75 0.9]
+    ψ = influence(quantile, X, ps)
+    @test all(I -> ψ[I] == influence(quantile, X, ps[I]), CartesianIndices(ps))
+    fits = Ref(0)                                                       # one fit serves every level
+    influence(quantile, X, ps; density = CountingDensity(fits))
+    @test fits[] == 1
+    v, ψ = value_and_influence(quantile, X, ps; alpha = 0.0, beta = 0.0, density = D)
+    @test v == quantile(X, ps; alpha = 0.0, beta = 0.0)
+    @test ψ[2, 3] ≈ expected(0.9, v[2, 3])
+    @test influence(quantile, sort(X), ps; sorted = true)[1, 2] ≈ influence(quantile, X, ps)[1, 2][sortperm(X)]
+
+    po = OffsetArray([0.1, 0.9], -3)                                    # the levels' axes on the outside
+    @test axes(influence(quantile, X, po)) == axes(po)
+    pd = DimArray([0.1, 0.9], Dim{:level}([0.1, 0.9]))
+    xd = DimArray(X, Dim{:draw}(1:N))                                   # the data's axes on the inside
+    ψd = influence(quantile, xd, pd)
+    @test ψd isa DimArray
+    @test dims(ψd) == dims(pd)
+    @test dims(ψd[1]) == dims(xd)
+    @test dims(influence(quantile, xd, [0.1, 0.9])[1]) == dims(xd)
+
+    @test isempty(influence(quantile, X, Float64[]))
+    for ps in ([0.5, 1.0], (0.0, 0.5), [-0.1 0.5])
+        @test_throws DomainError influence(quantile, X, ps)
+    end
+    @inferred value_and_influence(quantile, X, [0.1, 0.9])
+    @inferred value_and_influence(quantile, X, ps)
+    @inferred value_and_influence(quantile, X, (0.25, 0.75))
+end
+
 @testset "median" begin
     for x in (X, X[1:35])                                               # even and odd n
         v, ψ = value_and_influence(median, x)

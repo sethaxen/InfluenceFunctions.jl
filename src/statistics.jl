@@ -113,10 +113,26 @@ function value_and_influence(
         ::typeof(Statistics.quantile), x::AbstractArray{<:Real}, p::Real;
         density = QuantileSpacing(), kwargs...,
     )
-    0 < p < 1 || throw(DomainError(p, "the influence function of a quantile requires 0 < p < 1"))
+    _check_level(p)
     q = Statistics.quantile(x, p; kwargs...)
     g = fit_density(density, x)
     return q, _quantile_influence.(x, q, p, _density_at_quantile(g, q, p))
+end
+
+function value_and_influence(
+        ::typeof(Statistics.quantile), x::AbstractArray{<:Real},
+        ps::Union{AbstractArray{<:Real}, Tuple{Vararg{Real}}};
+        density = QuantileSpacing(), kwargs...,
+    )
+    foreach(_check_level, ps)
+    qs = Statistics.quantile(x, ps; kwargs...)
+    g = fit_density(density, x)    # one fit serves every level
+    return qs, map((q, p) -> _quantile_influence.(x, q, p, _density_at_quantile(g, q, p)), qs, ps)
+end
+
+function _check_level(p)
+    0 < p < 1 || throw(DomainError(p, "the influence function of a quantile requires 0 < p < 1"))
+    return nothing
 end
 
 # Influence at `t` of the quantile `q` at level `τ`, given the density `fq` at `q`.
