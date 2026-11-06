@@ -182,6 +182,40 @@ end
     @test_throws MethodError influence(mean_and_cov, M, pweights(ones(N)))
 end
 
+@testset "scattermat" begin
+    function T(p, c)
+        Z = M .- c
+        return N .* (Z' * (p .* Z))
+    end
+    S, ψ = value_and_influence(scattermat, M)
+    @test S == scattermat(M)
+    @test size(ψ) == size(S)
+    for I in CartesianIndices(S)
+        check_against_ad(p -> T(p, sum(p .* M; dims = 1))[I], (S[I], ψ[I]), S[I])
+    end
+    @test all(ψ .≈ (N - 1) .* influence(cov, M))
+    for c in (0, 1.5, [1.0 2.0 3.0])                        # a known center
+        Sc, ψc = value_and_influence(scattermat, M; mean = c)
+        @test Sc == scattermat(M; mean = c)
+        for I in CartesianIndices(Sc)
+            check_against_ad(p -> T(p, c)[I], (Sc[I], ψc[I]), Sc[I])
+        end
+    end
+    St, ψt = value_and_influence(scattermat, permutedims(M); dims = 2)   # variables as rows
+    @test St ≈ S
+    @test all(ψt .≈ ψ)
+    @test all(influence(scattermat, permutedims(M); dims = 2, mean = [1.0, 2.0, 3.0]) .≈ influence(scattermat, M; mean = [1.0 2.0 3.0]))
+    @test eltype(influence(scattermat, Float32.(M))[1, 2]) === Float32
+    @inferred value_and_influence(scattermat, M)
+    @inferred value_and_influence(scattermat, M; dims = 2)
+    @inferred value_and_influence(scattermat, M; mean = 0)
+    @test_throws ArgumentError influence(scattermat, M; dims = 3)   # accepted by StatsBase.scattermat
+    # StatsBase.scattermat takes only a DenseMatrix.
+    @test_throws MethodError influence(scattermat, DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3))))
+    @test_throws MethodError influence(scattermat, M, pweights(ones(N)))
+    @test_throws MethodError influence(scattermat, M; density = nothing)
+end
+
 @testset "weights are not a second variable" begin
     w = fweights(ones(Int, N))
     @test_throws MethodError influence(cov, M, w)

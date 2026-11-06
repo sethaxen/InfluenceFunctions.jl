@@ -27,6 +27,8 @@ const EXT_CALLS = Any[
     (mean_and_std, (reshape(X, 9, 4), 1), (;)),
     (mean_and_cov, (M,), (;)),
     (mean_and_cov, (M, 2), (;)),
+    (scattermat, (M,), (;)),
+    (scattermat, (M,), (; mean = 0, dims = 2)),
 ]
 
 # JET's analysis is tied to compiler internals, so skip it on prereleases.

@@ -288,4 +288,24 @@ function InfluenceFunctions.value_and_influence(
     throw(MethodError(InfluenceFunctions.value_and_influence, (f, x, w)))
 end
 
+############
+# scattermat
+############
+
+# S = n Ĉ, with Ĉ the uncorrected covariance about the center and n held fixed, so with `z` the
+# centered variables, ψ = n zⱼ zₗ - S. Estimating the center adds nothing, as for `var`.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.scattermat), x::DenseMatrix{<:Real}; mean = nothing, dims::Int = 1
+    )
+    S = StatsBase.scattermat(x; mean, dims)
+    z = x .- (mean === nothing ? Statistics.mean(x; dims) : mean)
+    ψ = InfluenceFunctions._with_variables(z, dims) do vars
+        return map(S, CartesianIndices(S)) do s, I
+            j, l = Tuple(I)
+            return length(vars[j]) .* vars[j] .* vars[l] .- s
+        end
+    end
+    return S, ψ
+end
+
 end
