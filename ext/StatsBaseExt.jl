@@ -96,11 +96,11 @@ end
 # g = m₃ / m₂^(3/2), so ψ = ψ₃ / m₂^(3/2) - (3g/2) ψ₂ / m₂.
 function _skewness_value_and_influence(x, c, center_est)
     g = StatsBase.skewness(x, c)
-    m₁, m₂, m₃ = (StatsBase.moment(x, k, c) for k in 1:3)
+    m₂, m₃ = (StatsBase.moment(x, k, c) for k in 2:3)
     ψ = broadcast(x) do t
         d = t - c
         d² = d * d
-        ψ₂ = _moment_influence(d², d, 2, m₂, m₁, center_est)
+        ψ₂ = d² - m₂    # no center term: m₁ is 0 about the mean
         ψ₃ = _moment_influence(d² * d, d, 3, m₃, m₂, center_est)
         return (ψ₃ / sqrt(m₂) - 3g / 2 * ψ₂) / m₂
     end
@@ -126,11 +126,11 @@ end
 # Excess kurtosis κ = m₄ / m₂² - 3, so ψ = ψ₄ / m₂² - 2(κ + 3) ψ₂ / m₂.
 function _kurtosis_value_and_influence(x, c, center_est)
     κ = StatsBase.kurtosis(x, c)
-    m₁, m₂, m₃, m₄ = (StatsBase.moment(x, k, c) for k in 1:4)
+    m₂, m₃, m₄ = (StatsBase.moment(x, k, c) for k in 2:4)
     ψ = broadcast(x) do t
         d = t - c
         d² = d * d
-        ψ₂ = _moment_influence(d², d, 2, m₂, m₁, center_est)
+        ψ₂ = d² - m₂    # no center term: m₁ is 0 about the mean
         ψ₄ = _moment_influence(d² * d², d, 4, m₄, m₃, center_est)
         return (ψ₄ / m₂ - 2 * (κ + 3) * ψ₂) / m₂
     end
