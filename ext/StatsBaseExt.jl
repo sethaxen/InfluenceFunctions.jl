@@ -14,7 +14,8 @@ function InfluenceFunctions.value_and_influence(
     )
     m = Statistics.mean(log, x)
     G = exp(m)
-    return G, G .* (log.(x) .- m)
+    # G = 0 means some observation is 0, and G stays 0 while it keeps any mass: ψ = 0, not NaN.
+    return G, @. ifelse(iszero(G), zero(G), G * (log(x) - m))
 end
 
 ##########
@@ -25,7 +26,7 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.harmmean), x::AbstractArray{<:Real},
     )
     H = inv(Statistics.mean(inv, x))
-    return H, H .* (1 .- H ./ x)
+    return H, @. ifelse(iszero(H), zero(H), H * (1 - H / x))    # H = 0 as for geomean
 end
 
 #########
@@ -38,7 +39,10 @@ function InfluenceFunctions.value_and_influence(
     iszero(p) && return InfluenceFunctions.value_and_influence(StatsBase.geomean, x)
     S = Statistics.mean(t -> float(t)^p, x)
     M = S^inv(p)    # as StatsBase.genmean computes it
-    return M, (M / p) .* ((float.(x) .^ p) ./ S .- 1)
+    # As for geomean, M stays 0 if a 0 keeps any mass (p < 0) or all observations are 0: ψ = 0,
+    # not NaN. Any other M = 0 is terms of both signs cancelling, which doesn't stay 0.
+    stays_zero = iszero(M) && (p < 0 || all(iszero, x))
+    return M, @. ifelse(stays_zero, zero(M), (M / p) * (float(x)^p / S - 1))
 end
 
 ########

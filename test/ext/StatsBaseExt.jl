@@ -7,11 +7,17 @@ kurt(p, m) = wmean(p, (X .- m) .^ 4) / wmean(p, (X .- m) .^ 2)^2 - 3
     check_against_ad(p -> exp(wmean(p, log.(X))), value_and_influence(geomean, X), geomean(X))
     check_shapes(geomean, X)
     @test_throws DomainError influence(geomean, [-1.0, 2.0])
+    for x in (zeros(3), [0.0, 1.0, 2.0])     # the value stays 0 while a zero keeps any mass
+        @test all(iszero, influence(geomean, x))
+    end
 end
 
 @testset "harmmean" begin
     check_against_ad(p -> inv(wmean(p, inv.(X))), value_and_influence(harmmean, X), harmmean(X))
     check_shapes(harmmean, X)
+    for x in (zeros(3), [0.0, 1.0, 2.0])     # the value stays 0 while a zero keeps any mass
+        @test all(iszero, influence(harmmean, x))
+    end
 end
 
 @testset "genmean" begin
@@ -21,6 +27,10 @@ end
     check_shapes(genmean, X, 2.5)
     @test influence(genmean, X, 0) ≈ influence(geomean, X)
     @test influence(genmean, X, 1) ≈ influence(mean, X)
+    @test all(iszero, influence(genmean, zeros(3), 2))
+    @test all(iszero, influence(genmean, [0.0, 1.0, 2.0], -1))   # the value stays 0 while a zero keeps any mass
+    @test all(isfinite, influence(genmean, [0.0, 1.0, 2.0], 2))  # here the value is not 0
+    @test all(isnan, influence(genmean, [-2.0, 1.0, 1.0], 1))    # terms cancel, so nothing keeps it at 0
 end
 
 @testset "moment" begin
