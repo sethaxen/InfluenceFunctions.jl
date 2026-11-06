@@ -151,12 +151,16 @@ _density_at_quantile(g::_SpacingDensity, q, τ) = _density_at_level(g, τ)
 function _density_at_level(g::_SpacingDensity, τ)
     (; xs, bandwidth) = g
     n = length(xs)
-    τ = clamp(τ, 1 // (2n), 1 - 1 // (2n))
-    h = _bandwidth(bandwidth, τ, n)
+    T = float(promote_type(typeof(τ), eltype(xs)))
+    # In at least Float64: in a narrower type 1 - 1/(2n) can round to 1, where the bandwidth
+    # is 0, and Float16 `norminvcdf` is inaccurate.
+    S = promote_type(T, Float64)
+    τ = clamp(S(τ), 1 // (2n), 1 - 1 // (2n))
+    h = S(_bandwidth(bandwidth, τ, n))
     isinf(h) && (h = one(h))    # halving would never shrink it
     while τ - h < 0 || τ + h > 1
         h /= 2
     end
     Q(u) = Statistics.quantile(xs, u; sorted = true, alpha = 0.5, beta = 0.5)    # Koenker's F̃⁻¹
-    return 2h / (Q(τ + h) - Q(τ - h))
+    return T(2h / (Q(τ + h) - Q(τ - h)))
 end

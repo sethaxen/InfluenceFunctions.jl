@@ -52,9 +52,16 @@ end
     gx = @inferred fit_density(QuantileSpacing(), X)
     @inferred gx(5.0)
     @inferred _density_at_quantile(gx, 5.0, 0.5)
+    @test @inferred(_density_at_quantile(gx, 5.0, 0.3f0)) isa Float64    # as wide as the data
+    @test _density_at_quantile(fit_density(QuantileSpacing(), big.(X)), big(5.0), 0.3) isa BigFloat
     g32 = fit_density(QuantileSpacing(), Float32.(X))                    # Float32 data stays Float32
     @test @inferred(g32(5.0f0)) isa Float32
     @test @inferred(_density_at_quantile(g32, 5.0f0, 0.3f0)) isa Float32
+    x16 = Float16[1, 2, 3, 5, 9]                                         # Float16 `norminvcdf` is inaccurate
+    @test fit_density(QuantileSpacing(), x16)(x16[4]) isa Float16
+    @test fit_density(QuantileSpacing(), x16)(x16[4]) ≈ fit_density(QuantileSpacing(), Float64.(x16))(5.0) rtol = 1.0e-2
+    y16 = Float16.(rand(StableRNG(3), Normal(), 5000))                   # 1 - 1/(2n) rounds to 1 in Float16
+    @test isfinite(fit_density(QuantileSpacing(), y16)(maximum(y16)))
 
     # accuracy against known densities
     for d in (Gamma(3, 2), Exponential(), Normal())

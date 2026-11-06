@@ -84,6 +84,7 @@ end
     @test v ≈ iqr(X)
     @test ψ ≈ influence(quantile, X, 0.75) .- influence(quantile, X, 0.25)
     check_shapes(iqr, X)
+    @test eltype(influence(iqr, big.(X))) === BigFloat
     @test all(isfinite, influence(iqr, rand(StableRNG(4), 1:5, 1000)))   # ties
 end
 
@@ -112,6 +113,7 @@ end
         @test first(value_and_influence(mad, x; normalize = true)) === mad(x; normalize = true)
     end
     @test all(isfinite, influence(mad, rand(StableRNG(4), 1:5, 1000); normalize = true))   # ties
+    @test all(isfinite, influence(mad, Float16[1, 2, 3, 5, 9]; normalize = true))
     # m̂ and m̂ ± ŝ inside atoms: the limiting form gives 0, not NaN
     for z in (rand(StableRNG(2), 0:2, 1000), [zeros(400); ones(600)], fill(2.0, 10), [3.0])
         @test all(iszero, influence(mad, z; normalize = true))

@@ -139,6 +139,11 @@ end
     end
 
     check_shapes(quantile, X, 0.3; vector_only = true)                  # Statistics.quantile takes only vectors
+    for (x, p) in ((X, 0.3f0), (big.(X), 0.3))                          # mixed precision
+        vp, ψp = value_and_influence(quantile, x, p)
+        @test eltype(ψp) === typeof(vp)
+    end
+    @test influence(quantile, 1.0e50 .* X, 0.3f0) ≈ 1.0e50 .* influence(quantile, X, 0.3f0)
     @test influence(quantile, 1.0:10.0, 0.3) == influence(quantile, collect(1.0:10.0), 0.3)   # ranges work
     atom = [zeros(300); rand(StableRNG(5), 700) .+ 0.5]                 # quantile inside an atom
     @test all(iszero, influence(quantile, atom, 0.2))
