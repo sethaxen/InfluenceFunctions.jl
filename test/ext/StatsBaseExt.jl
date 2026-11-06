@@ -157,6 +157,31 @@ end
     @test ψ[2] .- ψ[1] ≈ influence(iqr, X)
 end
 
+@testset "mean_and_cov" begin
+    for dims in (1, 2), corrected in (true, false)
+        x = dims == 1 ? M : permutedims(M)
+        v, ψ = value_and_influence(mean_and_cov, x, dims; corrected)
+        @test v == mean_and_cov(x, dims; corrected)
+        @test ψ[1] == influence(mean, x; dims)
+        @test ψ[2] == influence(cov, x; dims, corrected)
+    end
+    @test value_and_influence(mean_and_cov, M) == value_and_influence(mean_and_cov, M, 1)
+    # Rows are the observations, so the mean's influence values are summed across columns.
+    (m, S), (ψm, ψS) = value_and_influence(mean_and_cov, M)
+    gm = ForwardDiff.gradient(w -> only(w * (S \ w')), m)
+    gS = ForwardDiff.gradient(W -> only(m * (W \ m')), S)
+    function T(p)
+        c = sum(p .* M; dims = 1)
+        return only(c * (wcov(p, N / (N - 1)) \ c'))
+    end
+    @test vec(sum(gm .* ψm; dims = 2)) .+ sum(gS .* ψS) ≈ ad_influence(T, N) rtol = 1.0e-10
+    @inferred value_and_influence(mean_and_cov, M)
+    # StatsBase.mean_and_cov takes only a DenseMatrix, with the dimension given positionally.
+    @test_throws MethodError influence(mean_and_cov, DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3))))
+    @test_throws MethodError influence(mean_and_cov, M; dims = 1)
+    @test_throws MethodError influence(mean_and_cov, M, pweights(ones(N)))
+end
+
 @testset "weights are not a second variable" begin
     w = fweights(ones(Int, N))
     @test_throws MethodError influence(cov, M, w)

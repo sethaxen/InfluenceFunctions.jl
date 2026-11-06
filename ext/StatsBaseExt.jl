@@ -259,6 +259,21 @@ function _mean_and_value_and_influence(f, x, dims, corrected)
     return (μ, v), (ψμ, ψ)
 end
 
+##############
+# mean_and_cov
+##############
+
+# Each estimate's ψ is what its own estimator gives, so the mean keeps the shape of a `dims`
+# reduction even though rows are the observations here.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_cov), x::DenseMatrix{<:Real}, dims::Int = 1;
+        corrected::Bool = true
+    )
+    m, ψm = InfluenceFunctions.value_and_influence(Statistics.mean, x; dims)
+    C, ψC = InfluenceFunctions.value_and_influence(Statistics.cov, x; dims, corrected)
+    return (m, C), (ψm, ψC)
+end
+
 ######################
 # weighted cov and cor
 ######################
