@@ -153,6 +153,7 @@ function _density_at_level(g::_SpacingDensity, τ)
     n = length(xs)
     τ = clamp(τ, 1 // (2n), 1 - 1 // (2n))
     h = _bandwidth(bandwidth, τ, n)
+    isinf(h) && (h = one(h))    # halving would never shrink it
     while τ - h < 0 || τ + h > 1
         h /= 2
     end

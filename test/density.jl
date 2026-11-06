@@ -18,6 +18,7 @@ end
     @test _bandwidth(HallSheatherBandwidth(), 0.9, 1000) ≈ 0.03459946254739375 rtol = 1.0e-12
     @test _bandwidth(HallSheatherBandwidth(), 0.05, 10_000) ≈ 0.009851244664485101 rtol = 1.0e-12
     @test_throws DomainError HallSheatherBandwidth(; alpha = 1.5)
+    @test _bandwidth(HallSheatherBandwidth(; alpha = 1.0e-20), 0.5, 1000) == Inf   # 1 - α/2 rounds to 1
     @test _bandwidth(HallSheatherBandwidth(), 0.3f0, 1000) isa Float32     # follows the level's type
 end
 
@@ -40,6 +41,14 @@ end
     g1, g2 = fit_density(QuantileSpacing(), atom), fit_density(QuantileSpacing(), -atom)
     @test _density_at_quantile(g1, 0.0, 0.2) == _density_at_quantile(g2, 0.0, 0.8) == Inf
     @test g1(0.0) == g2(0.0) == Inf                                       # mid-rank levels 0.15 and 0.85
+    for x in (X, Float32.(X))                                            # an infinite bandwidth still halves
+        tiny = QuantileSpacing(; bandwidth = HallSheatherBandwidth(; alpha = 1.0e-20))
+        @test 0 < _density_at_quantile(fit_density(tiny, x), 5.0, one(eltype(x)) / 2) < Inf
+    end
+    b = HallSheatherBandwidth(; alpha = 1.0e-3)                          # a finite h > 1 halves as usual
+    h = _bandwidth(b, 0.5, 2)
+    @test h > 1
+    @test _density_at_quantile(fit_density(QuantileSpacing(; bandwidth = b), [1.0, 2.0]), 1.5, 0.5) ≈ h / 2
     gx = @inferred fit_density(QuantileSpacing(), X)
     @inferred gx(5.0)
     @inferred _density_at_quantile(gx, 5.0, 0.5)
