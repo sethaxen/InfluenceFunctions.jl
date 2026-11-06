@@ -14,7 +14,8 @@ function InfluenceFunctions.value_and_influence(
     )
     m = Statistics.mean(log, x)
     G = exp(m)
-    return G, G .* (log.(x) .- m)
+    # G = 0 means some observation is 0, and G stays 0 while it keeps any mass: ψ = 0, not NaN.
+    return G, @. ifelse(iszero(G), zero(G), G * (log(x) - m))
 end
 
 ##########
@@ -25,7 +26,7 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.harmmean), x::AbstractArray{<:Real},
     )
     H = inv(Statistics.mean(inv, x))
-    return H, H .* (1 .- H ./ x)
+    return H, @. ifelse(iszero(H), zero(H), H * (1 - H / x))    # H = 0 as for geomean
 end
 
 #########
@@ -38,7 +39,10 @@ function InfluenceFunctions.value_and_influence(
     iszero(p) && return InfluenceFunctions.value_and_influence(StatsBase.geomean, x)
     S = Statistics.mean(t -> float(t)^p, x)
     M = S^inv(p)    # as StatsBase.genmean computes it
-    return M, (M / p) .* ((float.(x) .^ p) ./ S .- 1)
+    # As for geomean, M stays 0 if a 0 keeps any mass (p < 0) or all observations are 0: ψ = 0,
+    # not NaN. Any other M = 0 is terms of both signs cancelling, which doesn't stay 0.
+    stays_zero = iszero(M) && (p < 0 || all(iszero, x))
+    return M, @. ifelse(stays_zero, zero(M), (M / p) * (float(x)^p / S - 1))
 end
 
 ########
@@ -60,13 +64,18 @@ end
 function _moment_value_and_influence(x, k, c, center_est)
     mₖ = StatsBase.moment(x, k, c)
     mₖ₋₁ = center_est ? StatsBase.moment(x, k - 1, c) : zero(mₖ)
-    return mₖ, _moment_influence.(x .- c, k, mₖ, mₖ₋₁, center_est)
+    ψ = broadcast(x) do t
+        d = t - c
+        return _moment_influence(d^k, d, k, mₖ, mₖ₋₁, center_est)
+    end
+    return mₖ, ψ
 end
 
-# Influence of the k-th moment about a center `c` at the deviation `d = t - c`, given the
-# moments mₖ and mₖ₋₁ about `c`. When `c` is the estimated mean, the last term accounts for
-# estimating it.
-_moment_influence(d, k, mₖ, mₖ₋₁, center_est) = d^k - mₖ - center_est * (k * mₖ₋₁ * d)
+# Influence of the k-th moment about a center `c` at the deviation `d = t - c`, given
+# `dᵏ = d^k` and the moments mₖ and mₖ₋₁ about `c`. When `c` is the estimated mean, the last
+# term accounts for estimating it. `dᵏ` is an argument so that callers with a known `k` can
+# multiply: `d^k` with a non-literal `k` is many times slower.
+_moment_influence(dᵏ, d, k, mₖ, mₖ₋₁, center_est) = dᵏ - mₖ - center_est * (k * mₖ₋₁ * d)
 
 ##########
 # skewness
@@ -87,11 +96,12 @@ end
 # g = m₃ / m₂^(3/2), so ψ = ψ₃ / m₂^(3/2) - (3g/2) ψ₂ / m₂.
 function _skewness_value_and_influence(x, c, center_est)
     g = StatsBase.skewness(x, c)
-    m₁, m₂, m₃ = (StatsBase.moment(x, k, c) for k in 1:3)
+    m₂, m₃ = (StatsBase.moment(x, k, c) for k in 2:3)
     ψ = broadcast(x) do t
         d = t - c
-        ψ₂ = _moment_influence(d, 2, m₂, m₁, center_est)
-        ψ₃ = _moment_influence(d, 3, m₃, m₂, center_est)
+        d² = d * d
+        ψ₂ = d² - m₂    # no center term: m₁ is 0 about the mean
+        ψ₃ = _moment_influence(d² * d, d, 3, m₃, m₂, center_est)
         return (ψ₃ / sqrt(m₂) - 3g / 2 * ψ₂) / m₂
     end
     return g, ψ
@@ -116,11 +126,13 @@ end
 # Excess kurtosis κ = m₄ / m₂² - 3, so ψ = ψ₄ / m₂² - 2(κ + 3) ψ₂ / m₂.
 function _kurtosis_value_and_influence(x, c, center_est)
     κ = StatsBase.kurtosis(x, c)
-    m₁, m₂, m₃, m₄ = (StatsBase.moment(x, k, c) for k in 1:4)
+    m₂, m₃ = (StatsBase.moment(x, k, c) for k in 2:3)
+    m₄ = (κ + 3) * m₂^2
     ψ = broadcast(x) do t
         d = t - c
-        ψ₂ = _moment_influence(d, 2, m₂, m₁, center_est)
-        ψ₄ = _moment_influence(d, 4, m₄, m₃, center_est)
+        d² = d * d
+        ψ₂ = d² - m₂    # no center term: m₁ is 0 about the mean
+        ψ₄ = _moment_influence(d² * d², d, 4, m₄, m₃, center_est)
         return (ψ₄ / m₂ - 2 * (κ + 3) * ψ₂) / m₂
     end
     return κ, ψ
@@ -130,23 +142,23 @@ end
 # variation
 ###########
 
-# V = s / μ̂, so ψ = (ψ_std - V (x - μ̂)) / μ̂. StatsBase checks the keywords.
+# V = s / μ̂, so ψ = (ψ_std - V (x - μ̂)) / μ̂.
 function InfluenceFunctions.value_and_influence(
-        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}; kwargs...
+        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}; corrected::Bool = true
     )
-    V = StatsBase.variation(x; kwargs...)
     μ = Statistics.mean(x)
-    _, ψ = InfluenceFunctions.value_and_influence(Statistics.std, x; kwargs...)
+    s, ψ = InfluenceFunctions.value_and_influence(Statistics.stdm, x, μ; corrected)
+    V = s / μ
     ψ .= (ψ .- V .* (x .- μ)) ./ μ
     return V, ψ
 end
 
 # V = s / m, so ψ = ψ_stdm / m.
 function InfluenceFunctions.value_and_influence(
-        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}, m::Real; kwargs...
+        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}, m::Real; corrected::Bool = true
     )
-    V = StatsBase.variation(x, m; kwargs...)
-    _, ψ = InfluenceFunctions.value_and_influence(Statistics.stdm, x, m; kwargs...)
+    s, ψ = InfluenceFunctions.value_and_influence(Statistics.stdm, x, m; corrected)
+    V = s / m
     ψ ./= m
     return V, ψ
 end
@@ -156,10 +168,11 @@ end
 ############
 
 function InfluenceFunctions.value_and_influence(
-        ::typeof(StatsBase.percentile), x::AbstractArray{<:Real}, p::Real; kwargs...
+        ::typeof(StatsBase.percentile), x::AbstractArray{<:Real}, p::Real;
+        density = InfluenceFunctions.QuantileSpacing()
     )
     # p * 0.01 as in StatsBase.percentile; p / 100 differs in the last bit for some p
-    return InfluenceFunctions.value_and_influence(Statistics.quantile, x, p * 0.01; kwargs...)
+    return InfluenceFunctions.value_and_influence(Statistics.quantile, x, p * 0.01; density)
 end
 
 #####

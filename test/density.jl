@@ -18,6 +18,7 @@ end
     @test _bandwidth(HallSheatherBandwidth(), 0.9, 1000) ≈ 0.03459946254739375 rtol = 1.0e-12
     @test _bandwidth(HallSheatherBandwidth(), 0.05, 10_000) ≈ 0.009851244664485101 rtol = 1.0e-12
     @test_throws DomainError HallSheatherBandwidth(; alpha = 1.5)
+    @test _bandwidth(HallSheatherBandwidth(; alpha = 1.0e-20), 0.5, 1000) == Inf   # 1 - α/2 rounds to 1
     @test _bandwidth(HallSheatherBandwidth(), 0.3f0, 1000) isa Float32     # follows the level's type
 end
 
@@ -30,7 +31,7 @@ end
     @test g(50.0) ≈ 1 / 100     # interior: level 0.495, 0.1 / (55.0 - 45.0)
     @test g(1.0) ≈ 1 / 50       # level 0.005, h halved to 0.003125; the EQF's flat end doubles it (documented)
     @test g(100.0) ≈ 1 / 50
-    @test g(-5.0) ≈ 1 / 50      # outside the data: level clamped to 1/(2n)
+    @test g(0.5) == g(100.5) == 0                                       # outside the data
     @test _density_at_quantile(g, 50.5, 0.5) ≈ 1 / 100                  # nominal level
     @test isfinite(_density_at_quantile(fit_density(QuantileSpacing(), X), 0.0, 0.001))   # level clamped
     @test fit_density(QuantileSpacing(), fill(2.0, 10))(2.0) == Inf      # point mass
@@ -40,12 +41,28 @@ end
     g1, g2 = fit_density(QuantileSpacing(), atom), fit_density(QuantileSpacing(), -atom)
     @test _density_at_quantile(g1, 0.0, 0.2) == _density_at_quantile(g2, 0.0, 0.8) == Inf
     @test g1(0.0) == g2(0.0) == Inf                                       # mid-rank levels 0.15 and 0.85
+    for x in (X, Float32.(X))                                            # an infinite bandwidth still halves
+        tiny = QuantileSpacing(; bandwidth = HallSheatherBandwidth(; alpha = 1.0e-20))
+        @test 0 < _density_at_quantile(fit_density(tiny, x), 5.0, one(eltype(x)) / 2) < Inf
+    end
+    b = HallSheatherBandwidth(; alpha = 1.0e-3)                          # a finite h > 1 halves as usual
+    h = _bandwidth(b, 0.5, 2)
+    @test h > 1
+    @test _density_at_quantile(fit_density(QuantileSpacing(; bandwidth = b), [1.0, 2.0]), 1.5, 0.5) ≈ h / 2
+    @test isnan(fit_density(QuantileSpacing(), [1.0, NaN, 3.0])(2.0))
     gx = @inferred fit_density(QuantileSpacing(), X)
     @inferred gx(5.0)
     @inferred _density_at_quantile(gx, 5.0, 0.5)
+    @test @inferred(_density_at_quantile(gx, 5.0, 0.3f0)) isa Float64    # as wide as the data
+    @test _density_at_quantile(fit_density(QuantileSpacing(), big.(X)), big(5.0), 0.3) isa BigFloat
     g32 = fit_density(QuantileSpacing(), Float32.(X))                    # Float32 data stays Float32
     @test @inferred(g32(5.0f0)) isa Float32
     @test @inferred(_density_at_quantile(g32, 5.0f0, 0.3f0)) isa Float32
+    x16 = Float16[1, 2, 3, 5, 9]                                         # Float16 `norminvcdf` is inaccurate
+    @test fit_density(QuantileSpacing(), x16)(x16[4]) isa Float16
+    @test fit_density(QuantileSpacing(), x16)(x16[4]) ≈ fit_density(QuantileSpacing(), Float64.(x16))(5.0) rtol = 1.0e-2
+    y16 = Float16.(rand(StableRNG(3), Normal(), 5000))                   # 1 - 1/(2n) rounds to 1 in Float16
+    @test isfinite(fit_density(QuantileSpacing(), y16)(maximum(y16)))
 
     # accuracy against known densities
     for d in (Gamma(3, 2), Exponential(), Normal())
