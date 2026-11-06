@@ -125,3 +125,9 @@ end
     end
     @test_throws MethodError influence(mad, X; constant = 1.0)            # deprecated in StatsBase
 end
+
+@testset "weights are not a second variable" begin
+    w = fweights(ones(Int, N))
+    @test_throws MethodError influence(cov, M, w)
+    @test_throws MethodError influence(cor, M, w)
+end

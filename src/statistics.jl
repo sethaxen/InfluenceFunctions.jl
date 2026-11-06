@@ -93,6 +93,17 @@ function value_and_influence(
     return C, _with_variables(vars -> _cov_influences(C, vars, vars, corrected), X, dims)
 end
 
+function value_and_influence(
+        ::typeof(Statistics.cov), X::AbstractVecOrMat{<:Real}, Y::AbstractVecOrMat{<:Real};
+        dims::Int = 1, corrected::Bool = true
+    )
+    C = Statistics.cov(X, Y; dims, corrected)
+    ψ = _with_variables(X, dims) do xs
+        return _with_variables(ys -> _cov_influences(C, xs, ys, corrected), Y, dims)
+    end
+    return C, ψ
+end
+
 # Influence of each entry of `C`, the covariance matrix of the variables `xs` and `ys`.
 function _cov_influences(C, xs, ys, corrected)
     μx, μy = map(Statistics.mean, xs), map(Statistics.mean, ys)
@@ -121,6 +132,17 @@ end
 function value_and_influence(::typeof(Statistics.cor), X::AbstractMatrix{<:Real}; dims::Int = 1)
     R = Statistics.cor(X; dims)
     return R, _with_variables(vars -> _cor_influences(R, vars, vars), X, dims)
+end
+
+function value_and_influence(
+        ::typeof(Statistics.cor), X::AbstractVecOrMat{<:Real}, Y::AbstractVecOrMat{<:Real};
+        dims::Int = 1
+    )
+    R = Statistics.cor(X, Y; dims)
+    ψ = _with_variables(X, dims) do xs
+        return _with_variables(ys -> _cor_influences(R, xs, ys), Y, dims)
+    end
+    return R, ψ
 end
 
 # Influence of each entry of `R`, the correlation matrix of the variables `xs` and `ys`.
@@ -212,10 +234,12 @@ _slice_length(x::AbstractArray, dims) = prod(d -> size(x, d), dims; init = 1)
 # Mean of (x - μx)(y - μy)
 _mean_cross(x, μx, y, μy) = Statistics.mean(i -> (x[i] - μx) * (y[i] - μy), eachindex(x, y))
 
-# `f` applied to the variables of `X`, its slices along the axis that is not `dims`. Each call
-# of `f` sees one slice type, so its result is inferred. Statistics.cov and Statistics.cor
-# accept any other `dims`, but what they return then says nothing about the variables.
+# `f` applied to the variables of `X`: its slices along the axis that is not `dims`, or `X`
+# itself if it is a vector, which is one variable for either `dims`. Each call of `f` sees one
+# slice type, so its result is inferred. Statistics.cov and Statistics.cor accept any other
+# `dims`, but what they return then says nothing about the variables.
 function _with_variables(f, X, dims)
     dims in (1, 2) || throw(ArgumentError("dims must be 1 or 2, got $dims"))
+    X isa AbstractVector && return f((X,))
     return dims == 1 ? f(eachcol(X)) : f(eachrow(X))
 end

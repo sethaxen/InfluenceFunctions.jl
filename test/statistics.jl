@@ -139,6 +139,50 @@ end
     @test_throws MethodError influence(cov, M; density = nothing)
 end
 
+@testset "cov(X, Y)" begin
+    A, B = M[:, 1:2], [M[:, 3] M[:, 1] .^ 2]
+    for corrected in (true, false)
+        b = corrected ? N / (N - 1) : 1.0
+        function T(p)
+            ZA, ZB = A .- sum(p .* A; dims = 1), B .- sum(p .* B; dims = 1)
+            return b .* (ZA' * (p .* ZB))
+        end
+        C, ψ = value_and_influence(cov, A, B; corrected)
+        @test C == cov(A, B; corrected)
+        @test size(ψ) == size(C)
+        for I in CartesianIndices(C)
+            check_against_ad(p -> T(p)[I], (C[I], ψ[I]), C[I])
+        end
+        Ct, ψt = value_and_influence(cov, permutedims(A), permutedims(B); dims = 2, corrected)
+        @test Ct ≈ C
+        @test all(ψt .≈ ψ)
+    end
+    x = M[:, 3]                                             # a vector is one variable
+    v, ψ = value_and_influence(cov, x, B; corrected = false)
+    @test v == cov(x, B; corrected = false)
+    @test size(ψ) == (1, 2)
+    @test ψ[1, 2] ≈ influence(cov, x, B[:, 2]; corrected = false)
+    v, ψ = value_and_influence(cov, A, x)
+    @test size(ψ) == (2, 1)
+    @test ψ[2, 1] ≈ influence(cov, A[:, 2], x)
+    v, ψ = value_and_influence(cov, x, permutedims(B); dims = 2)    # also when variables are rows
+    @test v == cov(x, permutedims(B); dims = 2)
+    @test size(ψ) == (1, 2)
+    @test ψ[1, 2] ≈ influence(cov, x, B[:, 2])
+    @inferred value_and_influence(cov, A, B)
+    @inferred value_and_influence(cov, x, B)
+    @inferred value_and_influence(cov, A, B; dims = 2)
+    Ad = DimArray(A, (Dim{:draw}(1:N), Dim{:a}(1:2)))
+    Bd = DimArray(B, (Dim{:draw}(1:N), Dim{:b}(1:2)))
+    Cd, ψd = value_and_influence(cov, Ad, Bd)
+    @test ψd isa DimArray
+    @test dims(ψd) == dims(Cd)
+    @test dims(ψd[1, 2]) == (dims(Ad, 1),)
+    @test_throws ArgumentError influence(cov, A, A; dims = 3)   # accepted by Statistics.cov
+    @test_throws DimensionMismatch influence(cov, A, B[1:5, :])
+    @test_throws MethodError influence(cov, x, x; dims = 1)     # two vectors have no dims
+end
+
 @testset "cor" begin
     Y = X .+ randn(StableRNG(2), N)
     Tcor = p -> begin
@@ -179,6 +223,44 @@ end
     @test dims(ψd[1, 2]) == (dims(Md, 1),)
     @test_throws ArgumentError influence(cor, M; dims = 3)
     @test_throws MethodError influence(cor, M; corrected = true)   # cor has no such keyword
+end
+
+@testset "cor(X, Y)" begin
+    A, B = M[:, 1:2], [M[:, 3] M[:, 1] .^ 2]
+    function T(p)
+        ZA, ZB = A .- sum(p .* A; dims = 1), B .- sum(p .* B; dims = 1)
+        sA, sB = sqrt.(vec(sum(p .* ZA .^ 2; dims = 1))), sqrt.(vec(sum(p .* ZB .^ 2; dims = 1)))
+        return (ZA' * (p .* ZB)) ./ (sA .* sB')
+    end
+    R, ψ = value_and_influence(cor, A, B)
+    @test R == cor(A, B)
+    @test size(ψ) == size(R)
+    for I in CartesianIndices(R)
+        check_against_ad(p -> T(p)[I], (R[I], ψ[I]), R[I])
+    end
+    Rt, ψt = value_and_influence(cor, permutedims(A), permutedims(B); dims = 2)
+    @test Rt ≈ R
+    @test all(ψt .≈ ψ)
+    x = M[:, 3]                                             # a vector is one variable
+    v, ψ = value_and_influence(cor, x, B)
+    @test v == cor(x, B)
+    @test size(ψ) == (1, 2)
+    @test ψ[1, 2] ≈ influence(cor, x, B[:, 2])
+    v, ψ = value_and_influence(cor, x, permutedims(B); dims = 2)
+    @test size(ψ) == (1, 2)
+    @test ψ[1, 2] ≈ influence(cor, x, B[:, 2])
+    @inferred value_and_influence(cor, A, B)
+    @inferred value_and_influence(cor, x, B)
+    @inferred value_and_influence(cor, A, B; dims = 2)
+    Ad = DimArray(A, (Dim{:draw}(1:N), Dim{:a}(1:2)))
+    Bd = DimArray(B, (Dim{:draw}(1:N), Dim{:b}(1:2)))
+    Rd, ψd = value_and_influence(cor, Ad, Bd)
+    @test ψd isa DimArray
+    @test dims(ψd) == dims(Rd)
+    @test dims(ψd[1, 2]) == (dims(Ad, 1),)
+    # Statistics.cor accepts this, except for older versions, which throw the DimensionMismatch.
+    @test_throws Union{ArgumentError, DimensionMismatch} influence(cor, A, A; dims = 3)
+    @test_throws MethodError influence(cor, A, B; corrected = true)
 end
 
 @testset "quantile" begin
