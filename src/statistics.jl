@@ -33,8 +33,7 @@ end
 function _var_value_and_influence(x, ::Nothing, corrected::Bool, dims)
     return _var_value_and_influence(x, Statistics.mean(x; dims), corrected, dims)
 end
-_var_value_and_influence(x, c, corrected::Bool, dims) = _var_about(x, c, corrected, dims)
-function _var_about(x, c, corrected, dims)
+function _var_value_and_influence(x, c, corrected::Bool, dims)
     v = Statistics.var(x; corrected, mean = c, dims)
     b = _bessel_factor(eltype(v), _slice_length(x, v), corrected)
     return v, b .* abs2.(x .- c) .- v
@@ -61,8 +60,7 @@ end
 function _std_value_and_influence(x, ::Nothing, corrected::Bool, dims)
     return _std_value_and_influence(x, Statistics.mean(x; dims), corrected, dims)
 end
-_std_value_and_influence(x, c, corrected::Bool, dims) = _std_about(x, c, corrected, dims)
-function _std_about(x, c, corrected, dims)
+function _std_value_and_influence(x, c, corrected::Bool, dims)
     s = Statistics.std(x; corrected, mean = c, dims)
     b = _bessel_factor(eltype(s), _slice_length(x, s), corrected)
     # ψ = ψ_var / 2s, with ψ_var = b |x - c|² - s². Where s = 0, every value in the slice
