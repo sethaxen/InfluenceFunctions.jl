@@ -5,8 +5,15 @@ const N = 36                                   # divisible by 4 and 12 for resha
 const X = rand(StableRNG(1), Gamma(3, 2), N)   # positive, skewed
 const C = 5.0                                  # fixed center for fixed-center estimators
 const D = Gamma(3, 2)                          # known density for quantile-type tests
+const M = [X (X .+ randn(StableRNG(2), N)) randn(StableRNG(3), N)]   # variables as columns
 
 wmean(p, v) = sum(p .* v)
+
+# Covariance matrix of the columns of M under probability weights p, scaled by b.
+function wcov(p, b = 1.0)
+    Z = M .- sum(p .* M; dims = 1)
+    return b .* (Z' * (p .* Z))
+end
 
 # Influence values by forward-mode AD: the derivative of T, a function of probability
 # weights p, as weight ε moves onto observation i.
