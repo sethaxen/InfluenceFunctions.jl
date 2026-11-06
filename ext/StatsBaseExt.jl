@@ -156,7 +156,8 @@ end
 ############
 
 function InfluenceFunctions.value_and_influence(
-        ::typeof(StatsBase.percentile), x::AbstractArray{<:Real}, p::Real; kwargs...
+        ::typeof(StatsBase.percentile), x::AbstractArray{<:Real},
+        p::Union{Real, AbstractArray{<:Real}}; kwargs...
     )
     # p * 0.01 as in StatsBase.percentile; p / 100 differs in the last bit for some p
     return InfluenceFunctions.value_and_influence(Statistics.quantile, x, p * 0.01; kwargs...)

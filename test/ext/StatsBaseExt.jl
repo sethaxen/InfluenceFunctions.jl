@@ -77,6 +77,13 @@ end
         @test_throws DomainError influence(percentile, X, p)
     end
     check_shapes(percentile, X, 30; vector_only = true)   # via Statistics.quantile: vectors only
+    ps = [25 50; 60 75]                                   # several levels
+    v, ψ = value_and_influence(percentile, X, ps; density = D)
+    @test v == percentile(X, ps)
+    @test size(ψ) == size(ps)
+    @test ψ[2, 1] == influence(percentile, X, 60; density = D)
+    @test_throws DomainError influence(percentile, X, [50, 100])
+    @test_throws MethodError influence(percentile, X, (25, 75))   # StatsBase.percentile rejects tuples
 end
 
 @testset "iqr" begin

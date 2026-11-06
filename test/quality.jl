@@ -18,6 +18,7 @@ const EXT_CALLS = Any[
     (variation, (X,), (; corrected = false)),
     (variation, (X, C), (;)),
     (percentile, (X, 30), (;)),
+    (percentile, (X, [25, 75]), (;)),
     (iqr, (X,), (;)),
     (mad, (X,), (; normalize = true)),
 ]
