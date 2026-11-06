@@ -142,23 +142,23 @@ end
 # variation
 ###########
 
-# V = s / μ̂, so ψ = (ψ_std - V (x - μ̂)) / μ̂. StatsBase checks the keywords.
+# V = s / μ̂, so ψ = (ψ_std - V (x - μ̂)) / μ̂.
 function InfluenceFunctions.value_and_influence(
-        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}; kwargs...
+        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}; corrected::Bool = true
     )
-    V = StatsBase.variation(x; kwargs...)
     μ = Statistics.mean(x)
-    _, ψ = InfluenceFunctions.value_and_influence(Statistics.std, x; kwargs...)
+    s, ψ = InfluenceFunctions.value_and_influence(Statistics.stdm, x, μ; corrected)
+    V = s / μ
     ψ .= (ψ .- V .* (x .- μ)) ./ μ
     return V, ψ
 end
 
 # V = s / m, so ψ = ψ_stdm / m.
 function InfluenceFunctions.value_and_influence(
-        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}, m::Real; kwargs...
+        ::typeof(StatsBase.variation), x::AbstractArray{<:Real}, m::Real; corrected::Bool = true
     )
-    V = StatsBase.variation(x, m; kwargs...)
-    _, ψ = InfluenceFunctions.value_and_influence(Statistics.stdm, x, m; kwargs...)
+    s, ψ = InfluenceFunctions.value_and_influence(Statistics.stdm, x, m; corrected)
+    V = s / m
     ψ ./= m
     return V, ψ
 end

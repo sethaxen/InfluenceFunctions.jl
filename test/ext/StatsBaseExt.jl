@@ -70,9 +70,13 @@ end
             value_and_influence(variation, X, C; corrected), variation(X, C; corrected)
         )
     end
+    @test first(value_and_influence(variation, X)) === variation(X)
+    @test first(value_and_influence(variation, X, C)) === variation(X, C)
     check_shapes(variation, X)
     check_shapes(variation, X, C)
     @test_throws MethodError influence(variation, X; dims = 1)    # StatsBase.variation has no dims
+    @test_throws MethodError influence(variation, X; dims = :)
+    @test_throws MethodError influence(variation, X, C; dims = :)
     @test all(iszero, influence(variation, fill(2.0, 10)))        # constant data: V = 0, defined
     @test all(iszero, influence(variation, fill(2.0, 10), 2.0))
 end
