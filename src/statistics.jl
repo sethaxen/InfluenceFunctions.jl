@@ -36,7 +36,7 @@ end
 _var_value_and_influence(x, c, corrected::Bool, dims) = _var_about(x, c, corrected, dims)
 function _var_about(x, c, corrected, dims)
     v = Statistics.var(x; corrected, mean = c, dims)
-    b = _bessel_factor(eltype(v), _slice_length(x, dims), corrected)
+    b = _bessel_factor(eltype(v), _slice_length(x, v), corrected)
     return v, b .* abs2.(x .- c) .- v
 end
 
@@ -64,7 +64,7 @@ end
 _std_value_and_influence(x, c, corrected::Bool, dims) = _std_about(x, c, corrected, dims)
 function _std_about(x, c, corrected, dims)
     s = Statistics.std(x; corrected, mean = c, dims)
-    b = _bessel_factor(eltype(s), _slice_length(x, dims), corrected)
+    b = _bessel_factor(eltype(s), _slice_length(x, s), corrected)
     # ψ = ψ_var / 2s, with ψ_var = b |x - c|² - s². Where s = 0, every value in the slice
     # equals the center, so moving mass onto any of them changes nothing: ψ = 0, not 0/0.
     return s, @. ifelse(iszero(s), zero(s), (b * abs2(x - c) / s - s) / 2)
@@ -152,9 +152,8 @@ end
 # Bessel factor `n/(n-1)` when `corrected`, else 1, in type `T`.
 _bessel_factor(::Type{T}, n::Integer, corrected::Bool) where {T} = corrected ? T(n) / T(n - 1) : one(T)
 
-# Number of observations in each slice reduced over `dims`.
-_slice_length(x::AbstractArray, ::Colon) = length(x)
-_slice_length(x::AbstractArray, dims) = prod(d -> size(x, d), dims; init = 1)
+# Number of observations in each slice of `x` reduced to one entry of the value `v`.
+_slice_length(x, v) = length(x) ÷ max(length(v), 1)
 
 # Mean of (x - μx)(y - μy)
 _mean_cross(x, μx, y, μy) = Statistics.mean(i -> (x[i] - μx) * (y[i] - μy), eachindex(x, y))

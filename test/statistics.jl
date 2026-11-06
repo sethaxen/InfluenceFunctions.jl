@@ -48,6 +48,11 @@ end
     # as in Statistics: a number center goes with the whole array, an array center with `dims`
     @test_throws MethodError influence(var, A; dims = 1, mean = C)
     @test_throws MethodError influence(var, A; mean = mc)
+    xd = DimArray(A, (Dim{:draw}(1:9), Dim{:chain}(1:4)))                # other `dims` forms that `var` takes
+    for dims in (:chain, Dim{:chain}())
+        @test parent(influence(var, xd; dims)) ≈ influence(var, A; dims = 2)
+    end
+    @test influence(var, A; dims = (1, 1)) == influence(var, A; dims = 1)
     v, ψ = value_and_influence(var, [3.0])
     @test isnan(v) && all(isnan, ψ)                      # n = 1, corrected
     @test all(iszero, influence(var, fill(2.0, 10)))     # constant data
@@ -68,6 +73,11 @@ end
         check_dims(std, x; dims, corrected)
     end
     @test influence(std, A; dims = 1, mean = fill(C, 1, 4))[:, 3] ≈ influence(std, A[:, 3]; mean = C)
+    xd = DimArray(A, (Dim{:draw}(1:9), Dim{:chain}(1:4)))                # other `dims` forms that `std` takes
+    for dims in (:chain, Dim{:chain}())
+        @test parent(influence(std, xd; dims)) ≈ influence(std, A; dims = 2)
+    end
+    @test influence(std, A; dims = (1, 1)) == influence(std, A; dims = 1)
     # constant data: the value is 0 and moving mass onto any observation changes nothing
     @test all(iszero, influence(std, fill(2.0, 10)))
     @test all(iszero, influence(std, [fill(2.0, 5) X[1:5]]; dims = 1)[:, 1])   # a constant slice
