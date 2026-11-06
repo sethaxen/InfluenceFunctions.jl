@@ -151,6 +151,7 @@ function _density_at_level(g::_SpacingDensity, τ)
     (; xs, bandwidth) = g
     n = length(xs)
     T = float(promote_type(typeof(τ), eltype(xs)))
+    isnan(last(xs)) && return T(NaN)    # sorting puts NaNs last
     # In at least Float64: in a narrower type 1 - 1/(2n) can round to 1, where the bandwidth
     # is 0, and Float16 `norminvcdf` is inaccurate.
     S = promote_type(T, Float64)

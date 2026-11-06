@@ -115,6 +115,8 @@ end
     @test all(isfinite, influence(mad, rand(StableRNG(4), 1:5, 1000); normalize = true))   # ties
     @test all(isfinite, influence(mad, Float16[1, 2, 3, 5, 9]; normalize = true))
     @test parent(influence(mad, OffsetArray(X, -3); normalize = true)) == influence(mad, X; normalize = true)
+    v, ψ = value_and_influence(mad, [1.0, NaN, 3.0]; normalize = true)  # as `mad`, NaN propagates
+    @test isnan(v) && all(isnan, ψ)
     # m̂ and m̂ ± ŝ inside atoms: the limiting form gives 0, not NaN
     for z in (rand(StableRNG(2), 0:2, 1000), [zeros(400); ones(600)], fill(2.0, 10), [3.0])
         @test all(iszero, influence(mad, z; normalize = true))

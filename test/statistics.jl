@@ -177,6 +177,13 @@ end
         @test axes(influence(median, Ao; dims)) == axes(Ao)
         @test parent(influence(median, Ao; dims)) == influence(median, A; dims)
     end
+    v, ψ = value_and_influence(median, [1.0, NaN, 3.0])                 # as `median`, NaN propagates
+    @test isnan(v) && all(isnan, ψ)
+    An = copy(A)
+    An[3, 2] = NaN
+    ψ = influence(median, An; dims = 1)                                 # only through its own slice
+    @test all(isnan, ψ[:, 2])
+    @test ψ[:, [1, 3, 4]] == influence(median, A; dims = 1)[:, [1, 3, 4]]
     @test influence(median, [3.0]) == [0.0]                             # n = 1
     @test all(isfinite, influence(median, rand(StableRNG(4), 1:5, 1000)))   # ties
     @test all(iszero, influence(median, fill(2.0, 10)))                 # constant data
