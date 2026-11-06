@@ -103,10 +103,11 @@ The level `τ` is:
     ``(\\hat F_n(t^-) + \\hat F_n(t))/2``. This choice is the package's own: it equals
     ``\\hat F_n(t)`` away from ties and treats tied minima and maxima alike.
 
-Also the package's own choices: levels are clamped to ``[1/(2n), 1 - 1/(2n)]``, where
-``\\tilde F_n^{-1}`` is not flat, and a window that lies inside an atom of the data gives an
-infinite density, so a quantile inside an atom has zero influence. Near the extremes, `h`
-is halved until ``[\\tau - h, \\tau + h] \\subseteq [0, 1]``, as in R's quantreg.
+Also the package's own choices: the density is 0 outside the range of the data, levels are
+clamped to ``[1/(2n), 1 - 1/(2n)]``, where ``\\tilde F_n^{-1}`` is not flat, and a window that
+lies inside an atom of the data gives an infinite density, so a quantile inside an atom has
+zero influence. Near the extremes, `h` is halved until
+``[\\tau - h, \\tau + h] \\subseteq [0, 1]``, as in R's quantreg.
 
 It is the default because it needs only the sorted data and a closed-form bandwidth, and
 unlike a kernel density estimate it stays accurate near the boundary of the support and on
@@ -139,6 +140,7 @@ end
 function (g::_SpacingDensity)(t)
     (; xs) = g
     T = float(eltype(xs))
+    (t < first(xs) || t > last(xs)) && return zero(T)    # no data out here
     i1 = firstindex(xs)
     ixmin = searchsortedfirst(xs, t) - i1 + 1
     ixmax = searchsortedlast(xs, t) - i1 + 1
@@ -151,11 +153,17 @@ _density_at_quantile(g::_SpacingDensity, q, τ) = _density_at_level(g, τ)
 function _density_at_level(g::_SpacingDensity, τ)
     (; xs, bandwidth) = g
     n = length(xs)
-    τ = clamp(τ, 1 // (2n), 1 - 1 // (2n))
-    h = _bandwidth(bandwidth, τ, n)
+    T = float(promote_type(typeof(τ), eltype(xs)))
+    isnan(last(xs)) && return T(NaN)    # sorting puts NaNs last
+    # In at least Float64: in a narrower type 1 - 1/(2n) can round to 1, where the bandwidth
+    # is 0, and Float16 `norminvcdf` is inaccurate.
+    S = promote_type(T, Float64)
+    τ = clamp(S(τ), 1 // (2n), 1 - 1 // (2n))
+    h = S(_bandwidth(bandwidth, τ, n))
+    isinf(h) && (h = one(h))    # halving would never shrink it
     while τ - h < 0 || τ + h > 1
         h /= 2
     end
     Q(u) = Statistics.quantile(xs, u; sorted = true, alpha = 0.5, beta = 0.5)    # Koenker's F̃⁻¹
-    return 2h / (Q(τ + h) - Q(τ - h))
+    return T(2h / (Q(τ + h) - Q(τ - h)))
 end

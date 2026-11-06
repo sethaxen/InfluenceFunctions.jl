@@ -48,6 +48,11 @@ end
     # as in Statistics: a number center goes with the whole array, an array center with `dims`
     @test_throws MethodError influence(var, A; dims = 1, mean = C)
     @test_throws MethodError influence(var, A; mean = mc)
+    xd = DimArray(A, (Dim{:draw}(1:9), Dim{:chain}(1:4)))                # other `dims` forms that `var` takes
+    for dims in (:chain, Dim{:chain}())
+        @test parent(influence(var, xd; dims)) ≈ influence(var, A; dims = 2)
+    end
+    @test influence(var, A; dims = (1, 1)) == influence(var, A; dims = 1)
     v, ψ = value_and_influence(var, [3.0])
     @test isnan(v) && all(isnan, ψ)                      # n = 1, corrected
     @test all(iszero, influence(var, fill(2.0, 10)))     # constant data
@@ -68,6 +73,11 @@ end
         check_dims(std, x; dims, corrected)
     end
     @test influence(std, A; dims = 1, mean = fill(C, 1, 4))[:, 3] ≈ influence(std, A[:, 3]; mean = C)
+    xd = DimArray(A, (Dim{:draw}(1:9), Dim{:chain}(1:4)))                # other `dims` forms that `std` takes
+    for dims in (:chain, Dim{:chain}())
+        @test parent(influence(std, xd; dims)) ≈ influence(std, A; dims = 2)
+    end
+    @test influence(std, A; dims = (1, 1)) == influence(std, A; dims = 1)
     # constant data: the value is 0 and moving mass onto any observation changes nothing
     @test all(iszero, influence(std, fill(2.0, 10)))
     @test all(iszero, influence(std, [fill(2.0, 5) X[1:5]]; dims = 1)[:, 1])   # a constant slice
@@ -283,6 +293,11 @@ end
     end
 
     check_shapes(quantile, X, 0.3; vector_only = true)                  # Statistics.quantile takes only vectors
+    for (x, p) in ((X, 0.3f0), (big.(X), 0.3))                          # mixed precision
+        vp, ψp = value_and_influence(quantile, x, p)
+        @test eltype(ψp) === typeof(vp)
+    end
+    @test influence(quantile, 1.0e50 .* X, 0.3f0) ≈ 1.0e50 .* influence(quantile, X, 0.3f0)
     @test influence(quantile, 1.0:10.0, 0.3) == influence(quantile, collect(1.0:10.0), 0.3)   # ranges work
     atom = [zeros(300); rand(StableRNG(5), 700) .+ 0.5]                 # quantile inside an atom
     @test all(iszero, influence(quantile, atom, 0.2))
@@ -356,6 +371,17 @@ end
         check_dims(median, x; dims)
     end
     check_dims(median, A; dims = 1, extra = (; density = D))
+    xd = DimArray(A, (Dim{:draw}(1:9), Dim{:chain}(1:4)))               # other `dims` forms that `median` takes
+    for dims in (:chain, Dim{:chain}())
+        @test parent(influence(median, xd; dims)) ≈ influence(median, A; dims = 2)
+    end
+    v, ψ = value_and_influence(median, [1.0, NaN, 3.0])                 # as `median`, NaN propagates
+    @test isnan(v) && all(isnan, ψ)
+    An = copy(A)
+    An[3, 2] = NaN
+    ψ = influence(median, An; dims = 1)                                 # only through its own slice
+    @test all(isnan, ψ[:, 2])
+    @test ψ[:, [1, 3, 4]] == influence(median, A; dims = 1)[:, [1, 3, 4]]
     @test influence(median, [3.0]) == [0.0]                             # n = 1
     @test all(isfinite, influence(median, rand(StableRNG(4), 1:5, 1000)))   # ties
     @test all(iszero, influence(median, fill(2.0, 10)))                 # constant data
