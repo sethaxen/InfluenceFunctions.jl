@@ -126,7 +126,8 @@ end
 # Excess kurtosis κ = m₄ / m₂² - 3, so ψ = ψ₄ / m₂² - 2(κ + 3) ψ₂ / m₂.
 function _kurtosis_value_and_influence(x, c, center_est)
     κ = StatsBase.kurtosis(x, c)
-    m₂, m₃, m₄ = (StatsBase.moment(x, k, c) for k in 2:4)
+    m₂, m₃ = (StatsBase.moment(x, k, c) for k in 2:3)
+    m₄ = (κ + 3) * m₂^2
     ψ = broadcast(x) do t
         d = t - c
         d² = d * d
