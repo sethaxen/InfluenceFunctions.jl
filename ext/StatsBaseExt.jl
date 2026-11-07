@@ -339,55 +339,43 @@ function InfluenceFunctions.value_and_influence(
     return _cumulant_value_and_influence(x, k, m, false)
 end
 
-# With d = t - c and mᵢ the mean of dⁱ, let G(s) = 1 + ∑ᵢ₌₂ mᵢ sⁱ / i!, the series whose logarithm
-# StatsBase.cumulant expands: κₖ for k ≥ 2 is k! times its coefficient of sᵏ. Then with
-# 1 / G(s) = ∑ⱼ aⱼ sʲ / j!, moving mass onto t perturbs log G by e^(sd) / G(s) - 1 - sd, so
-#     ψ of κₖ = ∑ⱼ binomial(k, j) aⱼ dᵏ⁻ʲ,
-# which also holds for κ₁, the center. With a given center, this drops the term linear in d.
+# Each cumulant's influence function is a polynomial in the deviation d = t - c, and a single
+# sequence aⱼ gives the coefficients of all of them.
+#
+# Let mᵢ be the mean of (xₗ - c)ⁱ over the data. StatsBase.cumulant takes κ₁ = c, and κₖ for
+# k ≥ 2 as k! times the coefficient of sᵏ in log G(s), where G(s) = 1 + ∑ᵢ₌₂ mᵢ sⁱ / i!. (It
+# leaves out m₁, even when `c` is not the mean.) Let 1 / G(s) = ∑ⱼ aⱼ sʲ / j!. Then:
+#   - G(s) ⋅ (1 / G(s)) = 1 gives a₀ = 1, a₁ = 0 and aⱼ = -∑ᵢ₌₂ʲ binomial(j, i) mᵢ aⱼ₋ᵢ.
+#   - (log G)′ = G′ ⋅ (1 / G) gives κₖ = ∑ⱼ₌₂ᵏ binomial(k - 1, j - 1) mⱼ aₖ₋ⱼ.
+#   - Moving mass onto t changes mᵢ at the rate dⁱ - mᵢ, less i mᵢ₋₁ d if `c` is the estimated
+#     mean. Summed over i, log G then changes at the rate e^(sd) / G(s) - 1 - sd. So the
+#     influence of κₖ is k! times the coefficient of sᵏ in e^(sd) / G(s),
+#         ∑ⱼ₌₀ᵏ binomial(k, j) aⱼ dᵏ⁻ʲ,
+#     which also holds for κ₁ = c. With a given center the rate is (e^(sd) - sd) / G(s) - 1,
+#     and the extra -sd / G(s) cancels exactly the term in d.
 function _cumulant_value_and_influence(x, k, c, center_est)
     minimum(k) > 0 || throw(ArgumentError("Cumulant orders must be strictly positive."))
     K = maximum(k)
-    T = float(promote_type(eltype(x), typeof(c)))
-    m = _moments_about(T, x, c, Val(K))::Vector{T}
-    κ = similar(m)
+    # About a float center, integer data don't overflow. m[1] is not used.
+    m = [StatsBase.moment(x, i, float(c)) for i in 1:K]
     a = similar(m, K + 1)    # a[j + 1] is aⱼ
-    κ[1] = c
+    κ = similar(m)           # cumulants
     a[1] = 1
     a[2] = 0
+    κ[1] = c
     for i in 2:K
         a[i + 1] = -sum(j -> binomial(i, j) * m[j] * a[i - j + 1], 2:i)
-        # from the derivative of log G, which is G′ / G
         κ[i] = sum(j -> binomial(i - 1, j - 1) * m[j] * a[i - j + 1], 2:i)
     end
-    function influences(i)
-        p = ntuple(l -> (l != 2 || center_est) * binomial(i, l - 1) * a[i - l + 2], i + 1)
-        ψ = similar(x, eltype(a))
-        _evalpoly!(ψ, x, c, p)
-        return ψ
+    ψ = map(k) do i
+        p = [binomial(i, l) * a[i - l + 1] for l in 0:i]    # p[l + 1] multiplies dˡ
+        if !center_est
+            p[2] = 0
+        end
+        return evalpoly.(x .- c, Ref(p))
     end
-    return κ[k], k isa Integer ? influences(k) : map(influences, k)
+    return κ[k], ψ
 end
-
-# Sums of the powers d, d², …, dᴷ. With `+` and `zero`, `sum` reduces them on any array type,
-# and pairwise where it does for numbers. `mapreduce` on tuples would need `init` to support
-# GPU arrays, which on other arrays accumulates in sequence, and loses accuracy for Float32.
-struct _PowerSums{K, T}
-    sums::NTuple{K, T}
-end
-Base.:+(a::_PowerSums, b::_PowerSums) = _PowerSums(a.sums .+ b.sums)
-Base.zero(::Type{_PowerSums{K, T}}) where {K, T} = _PowerSums(ntuple(Returns(zero(T)), Val(K)))
-
-# The means of dⁱ for i = 1, …, K, with d = t - c, from one pass over `x`.
-function _moments_about(::Type{T}, x, c, ::Val{K}) where {T, K}
-    isempty(x) && return fill(T(NaN), K)
-    total = sum(x) do t
-        return _PowerSums(accumulate(*, ntuple(Returns(float(t - c)), Val(K))))
-    end
-    return collect(total.sums ./ length(x))
-end
-
-# The polynomial with coefficients `p`, a tuple of known length, at each deviation from `c`.
-_evalpoly!(ψ, x, c, p) = broadcast!(t -> evalpoly(t - c, p), ψ, x)
 
 #############
 # proportions
