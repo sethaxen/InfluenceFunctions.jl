@@ -178,24 +178,23 @@ end
 ##########
 
 function value_and_influence(
-        ::typeof(Statistics.quantile), x::AbstractArray{<:Real}, p::Real;
+        ::typeof(Statistics.quantile), x::AbstractArray{<:Real},
+        p::Union{Real, AbstractArray{<:Real}, Tuple{Vararg{Real}}};
         density = QuantileSpacing(), kwargs...,
     )
-    _check_level(p)
+    foreach(_check_level, p)
     q = Statistics.quantile(x, p; kwargs...)
-    g = fit_density(density, x)
-    return q, _quantile_influence.(x, q, p, _density_at_quantile(g, q, p))
+    return q, _quantile_influences(density, x, q, p)
 end
 
 function value_and_influence(
-        ::typeof(Statistics.quantile), x::AbstractArray{<:Real},
-        ps::Union{AbstractArray{<:Real}, Tuple{Vararg{Real}}};
+        ::typeof(Statistics.quantile), f::Function, x::AbstractArray,
+        p::Union{Real, AbstractArray{<:Real}, Tuple{Vararg{Real}}};
         density = QuantileSpacing(), kwargs...,
     )
-    foreach(_check_level, ps)
-    qs = Statistics.quantile(x, ps; kwargs...)
-    g = fit_density(density, x)    # one fit serves every level
-    return qs, map((q, p) -> _quantile_influence.(x, q, p, _density_at_quantile(g, q, p)), qs, ps)
+    foreach(_check_level, p)
+    q = Statistics.quantile(f, x, p; kwargs...)    # Statistics computes it on f.(x)
+    return q, _quantile_influences(density, f.(x), q, p)
 end
 
 function _check_level(p)
@@ -205,6 +204,13 @@ end
 
 # Influence at `t` of the quantile `q` at level `τ`, given the density `fq` at `q`.
 _quantile_influence(t, q, τ, fq) = (τ - (t <= q)) / fq
+
+# Influence values on the sample `y` of its quantiles `q` at levels `p`, from one density fit.
+# `q` and `p` are numbers, or matching containers of them.
+function _quantile_influences(density, y, q, p)
+    g = fit_density(density, y)
+    return map((qₗ, pₗ) -> _quantile_influence.(y, qₗ, pₗ, _density_at_quantile(g, qₗ, pₗ)), q, p)
+end
 
 ########
 # median
@@ -227,6 +233,13 @@ function value_and_influence(
         end
     end
     return m, _quantile_influence.(x, m, τ, fm)
+end
+
+function value_and_influence(
+        ::typeof(Statistics.median), f::Function, x::AbstractArray; density = QuantileSpacing()
+    )
+    m = Statistics.median(f, x)    # Statistics computes it on f.(x)
+    return m, _quantile_influences(density, f.(x), m, oftype(float(m), 1 // 2))
 end
 
 #######
