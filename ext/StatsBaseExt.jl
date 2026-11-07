@@ -168,7 +168,8 @@ end
 ############
 
 function InfluenceFunctions.value_and_influence(
-        ::typeof(StatsBase.percentile), x::AbstractArray{<:Real}, p::Real;
+        ::typeof(StatsBase.percentile), x::AbstractArray{<:Real},
+        p::Union{Real, AbstractArray{<:Real}};
         density = InfluenceFunctions.QuantileSpacing()
     )
     # p * 0.01 as in StatsBase.percentile; p / 100 differs in the last bit for some p
@@ -235,6 +236,195 @@ function _density_ratio(f₊, f₋)
     f₊ == f₋ && return zero(f₊)
     (isinf(f₊) || isinf(f₋)) && return sign(f₊ - f₋)
     return (f₊ - f₋) / (f₊ + f₋)
+end
+
+############################
+# mean_and_var, mean_and_std
+############################
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_var), x::AbstractArray{<:Real}; corrected::Bool = true
+    )
+    return _mean_and_value_and_influence(Statistics.var, x, :, corrected)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_var), x::AbstractArray{<:Real}, dim::Int; corrected::Bool = true
+    )
+    return _mean_and_value_and_influence(Statistics.var, x, dim, corrected)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_std), x::AbstractArray{<:Real}; corrected::Bool = true
+    )
+    return _mean_and_value_and_influence(Statistics.std, x, :, corrected)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_std), x::AbstractArray{<:Real}, dim::Int; corrected::Bool = true
+    )
+    return _mean_and_value_and_influence(Statistics.std, x, dim, corrected)
+end
+
+function _mean_and_value_and_influence(f, x, dims, corrected)
+    μ, ψμ = InfluenceFunctions.value_and_influence(Statistics.mean, x; dims)
+    v, ψ = InfluenceFunctions.value_and_influence(f, x; corrected, mean = μ, dims)
+    return (μ, v), (ψμ, ψ)
+end
+
+##############
+# mean_and_cov
+##############
+
+# Each estimate's ψ is what its own estimator gives, so the mean keeps the shape of a `dims`
+# reduction even though rows are the observations here.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_cov), x::DenseMatrix{<:Real}, dims::Int = 1;
+        corrected::Bool = true
+    )
+    m, ψm = InfluenceFunctions.value_and_influence(Statistics.mean, x; dims)
+    C, ψC = InfluenceFunctions.value_and_influence(Statistics.cov, x; dims, corrected)
+    return (m, C), (ψm, ψC)
+end
+
+######################
+# weighted cov and cor
+######################
+
+# Weights are unsupported, and would otherwise be taken for a second variable.
+function InfluenceFunctions.value_and_influence(
+        f::typeof(Statistics.cov), x::DenseMatrix{<:Real}, w::StatsBase.AbstractWeights; kwargs...
+    )
+    throw(MethodError(InfluenceFunctions.value_and_influence, (f, x, w)))
+end
+
+function InfluenceFunctions.value_and_influence(
+        f::typeof(Statistics.cor), x::DenseMatrix{<:Real}, w::StatsBase.AbstractWeights; kwargs...
+    )
+    throw(MethodError(InfluenceFunctions.value_and_influence, (f, x, w)))
+end
+
+############
+# scattermat
+############
+
+# S = n Ĉ, with Ĉ the uncorrected covariance about the center and n held fixed, so with `z` the
+# centered variables, ψ = n zⱼ zₗ - S. Estimating the center adds nothing, as for `var`.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.scattermat), x::DenseMatrix{<:Real}; mean = nothing, dims::Int = 1
+    )
+    S = StatsBase.scattermat(x; mean, dims)
+    z = x .- (mean === nothing ? Statistics.mean(x; dims) : mean)
+    ψ = InfluenceFunctions._with_variables(z, dims) do vars
+        return map(S, CartesianIndices(S)) do s, I
+            j, l = Tuple(I)
+            return length(vars[j]) .* vars[j] .* vars[l] .- s
+        end
+    end
+    return S, ψ
+end
+
+##########
+# cumulant
+##########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.cumulant), x::AbstractArray{<:Real},
+        k::Union{Integer, AbstractRange{<:Integer}}
+    )
+    return _cumulant_value_and_influence(x, k, Statistics.mean(x), true)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.cumulant), x::AbstractArray{<:Real},
+        k::Union{Integer, AbstractRange{<:Integer}}, m::Real
+    )
+    return _cumulant_value_and_influence(x, k, m, false)
+end
+
+# Each cumulant's influence function is a polynomial in the deviation d = t - c, and a single
+# sequence aⱼ gives the coefficients of all of them.
+#
+# Let mᵢ be the mean of (xₗ - c)ⁱ over the data. StatsBase.cumulant takes κ₁ = c, and κₖ for
+# k ≥ 2 as k! times the coefficient of sᵏ in log G(s), where G(s) = 1 + ∑ᵢ₌₂ mᵢ sⁱ / i!. (It
+# leaves out m₁, even when `c` is not the mean.) Let 1 / G(s) = ∑ⱼ aⱼ sʲ / j!. Then:
+#   - G(s) ⋅ (1 / G(s)) = 1 gives a₀ = 1, a₁ = 0 and aⱼ = -∑ᵢ₌₂ʲ binomial(j, i) mᵢ aⱼ₋ᵢ.
+#   - (log G)′ = G′ ⋅ (1 / G) gives κₖ = ∑ⱼ₌₂ᵏ binomial(k - 1, j - 1) mⱼ aₖ₋ⱼ.
+#   - Moving mass onto t changes mᵢ at the rate dⁱ - mᵢ, less i mᵢ₋₁ d if `c` is the estimated
+#     mean. Summed over i, log G then changes at the rate e^(sd) / G(s) - 1 - sd. So the
+#     influence of κₖ is k! times the coefficient of sᵏ in e^(sd) / G(s),
+#         ∑ⱼ₌₀ᵏ binomial(k, j) aⱼ dᵏ⁻ʲ,
+#     which also holds for κ₁ = c. With a given center the rate is (e^(sd) - sd) / G(s) - 1,
+#     and the extra -sd / G(s) cancels exactly the term in d.
+function _cumulant_value_and_influence(x, k, c, center_est)
+    minimum(k) > 0 || throw(ArgumentError("Cumulant orders must be strictly positive."))
+    K = maximum(k)
+    # About a float center, integer data don't overflow. m[1] is not used.
+    m = [StatsBase.moment(x, i, float(c)) for i in 1:K]
+    a = similar(m, K + 1)    # a[j + 1] is aⱼ
+    κ = similar(m)           # cumulants
+    a[1] = 1
+    a[2] = 0
+    κ[1] = c
+    for i in 2:K
+        a[i + 1] = -sum(j -> binomial(i, j) * m[j] * a[i - j + 1], 2:i)
+        κ[i] = sum(j -> binomial(i - 1, j - 1) * m[j] * a[i - j + 1], 2:i)
+    end
+    ψ = map(k) do i
+        p = [binomial(i, l) * a[i - l + 1] for l in 0:i]    # p[l + 1] multiplies dˡ
+        if !center_est
+            p[2] = 0
+        end
+        return evalpoly.(x .- c, Ref(p))
+    end
+    return κ[k], ψ
+end
+
+#############
+# proportions
+#############
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.proportions), x::AbstractArray{<:Integer},
+        levels::UnitRange{<:Integer} = StatsBase.span(x)
+    )
+    p = StatsBase.proportions(x, levels)
+    return p, map((pₗ, l) -> (x .== l) .- pₗ, p, levels)
+end
+
+function InfluenceFunctions.value_and_influence(
+        f::typeof(StatsBase.proportions), x::AbstractArray{<:Integer}, k::Integer
+    )
+    return InfluenceFunctions.value_and_influence(f, x, 1:k)
+end
+
+function InfluenceFunctions.value_and_influence(
+        f::typeof(StatsBase.proportions), x::AbstractArray{<:Integer}, y::AbstractArray{<:Integer},
+        levels::NTuple{2, UnitRange{<:Integer}} = (StatsBase.span(x), StatsBase.span(y))
+    )
+    # Integer weights are integer arrays too, but StatsBase takes them as weights.
+    y isa StatsBase.AbstractWeights &&
+        throw(MethodError(InfluenceFunctions.value_and_influence, (f, x, y, levels)))
+    p = StatsBase.proportions(x, y, levels)
+    ψ = map(p, CartesianIndices(p)) do pₗ, I
+        a, b = levels[1][I[1]], levels[2][I[2]]
+        return ((x .== a) .& (y .== b)) .- pₗ
+    end
+    return p, ψ
+end
+
+function InfluenceFunctions.value_and_influence(
+        f::typeof(StatsBase.proportions), x::AbstractArray{<:Integer}, y::AbstractArray{<:Integer},
+        ks::NTuple{2, Integer}
+    )
+    return InfluenceFunctions.value_and_influence(f, x, y, (1:ks[1], 1:ks[2]))
+end
+
+function InfluenceFunctions.value_and_influence(
+        f::typeof(StatsBase.proportions), x::AbstractArray{<:Integer}, y::AbstractArray{<:Integer},
+        k::Integer
+    )
+    return InfluenceFunctions.value_and_influence(f, x, y, (1:k, 1:k))
 end
 
 end

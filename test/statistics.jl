@@ -118,6 +118,81 @@ end
     @test_throws DimensionMismatch influence(cov, X, Y[1:(end - 1)])
 end
 
+@testset "cov(X)" begin
+    for corrected in (true, false)
+        b = corrected ? N / (N - 1) : 1.0
+        C, ψ = value_and_influence(cov, M; corrected)
+        @test C == cov(M; corrected)
+        @test size(ψ) == size(C)
+        for I in CartesianIndices(C)
+            check_against_ad(p -> wcov(p, b)[I], (C[I], ψ[I]), C[I])
+        end
+        Ct, ψt = value_and_influence(cov, permutedims(M); dims = 2, corrected)   # variables as rows
+        @test Ct ≈ C
+        @test all(ψt .≈ ψ)
+    end
+    C, ψ = value_and_influence(cov, M)
+    @test ψ[1, 2] ≈ influence(cov, M[:, 1], M[:, 2])
+    # The gradient of the combined estimate is not symmetric, while ψ is.
+    G = ForwardDiff.gradient(S -> S[1, 2] / sqrt(S[1, 1] * S[2, 2]), C)
+    @test sum(G .* ψ) ≈ influence(cor, M[:, 1], M[:, 2])
+    @inferred value_and_influence(cov, M)
+    @inferred value_and_influence(cov, M; dims = 2)
+    Md = DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3)))   # value axes outside, data axes inside
+    Cd, ψd = value_and_influence(cov, Md)
+    @test ψd isa DimArray
+    @test dims(ψd) == dims(Cd)
+    @test dims(ψd[1, 2]) == (dims(Md, 1),)
+    @test parent(ψd[1, 2]) ≈ ψ[1, 2]
+    # Statistics.cov accepts this and returns a matrix that has nothing to do with the columns.
+    @test_throws ArgumentError influence(cov, M; dims = 3)
+    @test_throws MethodError influence(cov, M; density = nothing)
+end
+
+@testset "cov(X, Y)" begin
+    A, B = M[:, 1:2], [M[:, 3] M[:, 1] .^ 2]
+    for corrected in (true, false)
+        b = corrected ? N / (N - 1) : 1.0
+        function T(p)
+            ZA, ZB = A .- sum(p .* A; dims = 1), B .- sum(p .* B; dims = 1)
+            return b .* (ZA' * (p .* ZB))
+        end
+        C, ψ = value_and_influence(cov, A, B; corrected)
+        @test C == cov(A, B; corrected)
+        @test size(ψ) == size(C)
+        for I in CartesianIndices(C)
+            check_against_ad(p -> T(p)[I], (C[I], ψ[I]), C[I])
+        end
+        Ct, ψt = value_and_influence(cov, permutedims(A), permutedims(B); dims = 2, corrected)
+        @test Ct ≈ C
+        @test all(ψt .≈ ψ)
+    end
+    x = M[:, 3]                                             # a vector is one variable
+    v, ψ = value_and_influence(cov, x, B; corrected = false)
+    @test v == cov(x, B; corrected = false)
+    @test size(ψ) == (1, 2)
+    @test ψ[1, 2] ≈ influence(cov, x, B[:, 2]; corrected = false)
+    v, ψ = value_and_influence(cov, A, x)
+    @test size(ψ) == (2, 1)
+    @test ψ[2, 1] ≈ influence(cov, A[:, 2], x)
+    v, ψ = value_and_influence(cov, x, permutedims(B); dims = 2)    # also when variables are rows
+    @test v == cov(x, permutedims(B); dims = 2)
+    @test size(ψ) == (1, 2)
+    @test ψ[1, 2] ≈ influence(cov, x, B[:, 2])
+    @inferred value_and_influence(cov, A, B)
+    @inferred value_and_influence(cov, x, B)
+    @inferred value_and_influence(cov, A, B; dims = 2)
+    Ad = DimArray(A, (Dim{:draw}(1:N), Dim{:a}(1:2)))
+    Bd = DimArray(B, (Dim{:draw}(1:N), Dim{:b}(1:2)))
+    Cd, ψd = value_and_influence(cov, Ad, Bd)
+    @test ψd isa DimArray
+    @test dims(ψd) == dims(Cd)
+    @test dims(ψd[1, 2]) == (dims(Ad, 1),)
+    @test_throws ArgumentError influence(cov, A, A; dims = 3)   # accepted by Statistics.cov
+    @test_throws DimensionMismatch influence(cov, A, B[1:5, :])
+    @test_throws MethodError influence(cov, x, x; dims = 1)     # two vectors have no dims
+end
+
 @testset "cor" begin
     Y = X .+ randn(StableRNG(2), N)
     Tcor = p -> begin
@@ -127,6 +202,75 @@ end
     check_against_ad(Tcor, value_and_influence(cor, X, Y), cor(X, Y))
     @inferred value_and_influence(cor, X, Y)
     @test_throws DimensionMismatch influence(cor, OffsetArray(X, -3), Y)
+end
+
+@testset "cor(X)" begin
+    function Tcor(p)
+        S = wcov(p)
+        s = [sqrt(S[j, j]) for j in axes(S, 1)]
+        return S ./ (s .* s')
+    end
+    R, ψ = value_and_influence(cor, M)
+    @test R == cor(M)
+    @test size(ψ) == size(R)
+    for I in CartesianIndices(R)
+        if I[1] == I[2]
+            @test all(iszero, ψ[I])                     # a variable's correlation with itself is 1
+        else
+            check_against_ad(p -> Tcor(p)[I], (R[I], ψ[I]), R[I])
+        end
+    end
+    @test ψ[1, 2] ≈ influence(cor, M[:, 1], M[:, 2])
+    Rt, ψt = value_and_influence(cor, permutedims(M); dims = 2)   # variables as rows
+    @test Rt ≈ R
+    @test all(ψt .≈ ψ)
+    @inferred value_and_influence(cor, M)
+    @inferred value_and_influence(cor, M; dims = 2)
+    Md = DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3)))
+    Rd, ψd = value_and_influence(cor, Md)
+    @test ψd isa DimArray
+    @test dims(ψd) == dims(Rd)
+    @test dims(ψd[1, 2]) == (dims(Md, 1),)
+    @test_throws ArgumentError influence(cor, M; dims = 3)
+    @test_throws MethodError influence(cor, M; corrected = true)   # cor has no such keyword
+end
+
+@testset "cor(X, Y)" begin
+    A, B = M[:, 1:2], [M[:, 3] M[:, 1] .^ 2]
+    function T(p)
+        ZA, ZB = A .- sum(p .* A; dims = 1), B .- sum(p .* B; dims = 1)
+        sA, sB = sqrt.(vec(sum(p .* ZA .^ 2; dims = 1))), sqrt.(vec(sum(p .* ZB .^ 2; dims = 1)))
+        return (ZA' * (p .* ZB)) ./ (sA .* sB')
+    end
+    R, ψ = value_and_influence(cor, A, B)
+    @test R == cor(A, B)
+    @test size(ψ) == size(R)
+    for I in CartesianIndices(R)
+        check_against_ad(p -> T(p)[I], (R[I], ψ[I]), R[I])
+    end
+    Rt, ψt = value_and_influence(cor, permutedims(A), permutedims(B); dims = 2)
+    @test Rt ≈ R
+    @test all(ψt .≈ ψ)
+    x = M[:, 3]                                             # a vector is one variable
+    v, ψ = value_and_influence(cor, x, B)
+    @test v == cor(x, B)
+    @test size(ψ) == (1, 2)
+    @test ψ[1, 2] ≈ influence(cor, x, B[:, 2])
+    v, ψ = value_and_influence(cor, x, permutedims(B); dims = 2)
+    @test size(ψ) == (1, 2)
+    @test ψ[1, 2] ≈ influence(cor, x, B[:, 2])
+    @inferred value_and_influence(cor, A, B)
+    @inferred value_and_influence(cor, x, B)
+    @inferred value_and_influence(cor, A, B; dims = 2)
+    Ad = DimArray(A, (Dim{:draw}(1:N), Dim{:a}(1:2)))
+    Bd = DimArray(B, (Dim{:draw}(1:N), Dim{:b}(1:2)))
+    Rd, ψd = value_and_influence(cor, Ad, Bd)
+    @test ψd isa DimArray
+    @test dims(ψd) == dims(Rd)
+    @test dims(ψd[1, 2]) == (dims(Ad, 1),)
+    # Statistics.cor accepts this, except for older versions, which throw the DimensionMismatch.
+    @test_throws Union{ArgumentError, DimensionMismatch} influence(cor, A, A; dims = 3)
+    @test_throws MethodError influence(cor, A, B; corrected = true)
 end
 
 @testset "quantile" begin
@@ -164,6 +308,54 @@ end
         @test_throws DomainError influence(quantile, X, p)
     end
     @test_throws ArgumentError influence(quantile, Float64[], 0.5)
+end
+
+@testset "quantile at several levels" begin
+    expected(p, q) = (p .- (X .<= q)) ./ pdf(D, q)
+    levels = (
+        [0.1, 0.5, 0.9], [0.1 0.25 0.5; 0.6 0.75 0.9], reshape([0.1, 0.2, 0.3, 0.4], 2, 1, 2),
+        0.1:0.4:0.9, fill(0.5),
+    )
+    for ps in levels
+        v, ψ = value_and_influence(quantile, X, ps; density = D)
+        @test v == quantile(X, ps)
+        @test axes(ψ) == axes(v)
+        @test all(I -> ψ[I] ≈ expected(ps[I], v[I]), CartesianIndices(v))
+    end
+    v, ψ = value_and_influence(quantile, X, (0.25, 0.75); density = D)
+    @test v === quantile(X, (0.25, 0.75))
+    @test ψ isa Tuple{Vector{Float64}, Vector{Float64}}
+    @test ψ[2] ≈ expected(0.75, v[2])
+    @test influence(quantile, X, ()) === ()
+
+    ps = [0.1 0.25 0.5; 0.6 0.75 0.9]
+    ψ = influence(quantile, X, ps)
+    @test all(I -> ψ[I] == influence(quantile, X, ps[I]), CartesianIndices(ps))
+    fits = Ref(0)                                                       # one fit serves every level
+    influence(quantile, X, ps; density = CountingDensity(fits))
+    @test fits[] == 1
+    v, ψ = value_and_influence(quantile, X, ps; alpha = 0.0, beta = 0.0, density = D)
+    @test v == quantile(X, ps; alpha = 0.0, beta = 0.0)
+    @test ψ[2, 3] ≈ expected(0.9, v[2, 3])
+    @test influence(quantile, sort(X), ps; sorted = true)[1, 2] ≈ influence(quantile, X, ps)[1, 2][sortperm(X)]
+
+    po = OffsetArray([0.1, 0.9], -3)                                    # the levels' axes on the outside
+    @test axes(influence(quantile, X, po)) == axes(po)
+    pd = DimArray([0.1, 0.9], Dim{:level}([0.1, 0.9]))
+    xd = DimArray(X, Dim{:draw}(1:N))                                   # the data's axes on the inside
+    ψd = influence(quantile, xd, pd)
+    @test ψd isa DimArray
+    @test dims(ψd) == dims(pd)
+    @test dims(ψd[1]) == dims(xd)
+    @test dims(influence(quantile, xd, [0.1, 0.9])[1]) == dims(xd)
+
+    @test isempty(influence(quantile, X, Float64[]))
+    for ps in ([0.5, 1.0], (0.0, 0.5), [-0.1 0.5])
+        @test_throws DomainError influence(quantile, X, ps)
+    end
+    @inferred value_and_influence(quantile, X, [0.1, 0.9])
+    @inferred value_and_influence(quantile, X, ps)
+    @inferred value_and_influence(quantile, X, (0.25, 0.75))
 end
 
 @testset "median" begin

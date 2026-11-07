@@ -91,6 +91,13 @@ end
         @test_throws DomainError influence(percentile, X, p)
     end
     check_shapes(percentile, X, 30; vector_only = true)   # via Statistics.quantile: vectors only
+    ps = [25 50; 60 75]                                   # several levels
+    v, ψ = value_and_influence(percentile, X, ps; density = D)
+    @test v == percentile(X, ps)
+    @test size(ψ) == size(ps)
+    @test ψ[2, 1] == influence(percentile, X, 60; density = D)
+    @test_throws DomainError influence(percentile, X, [50, 100])
+    @test_throws MethodError influence(percentile, X, (25, 75))   # StatsBase.percentile rejects tuples
     @test_throws MethodError influence(percentile, X, 30; alpha = 0.0)    # percentile takes no quantile keywords
 end
 
@@ -141,4 +148,190 @@ end
     f₊ = InfluenceFunctions.fit_density(QuantileSpacing(), X)(c + s)
     @test influence(mad, X; center = c, normalize = false) ≈ (0.5 .- (abs.(X .- c) .<= s)) ./ f₊
     @test_throws MethodError influence(mad, X; constant = 1.0)            # deprecated in StatsBase
+end
+
+@testset "$f" for (f, g) in ((mean_and_var, var), (mean_and_std, std))
+    A = reshape(X, 9, 4)
+    for corrected in (true, false)
+        v, ψ = value_and_influence(f, X; corrected)
+        @test v == f(X; corrected)
+        @test ψ == (influence(mean, X), influence(g, X; corrected))
+        for dim in (1, 2)
+            v, ψ = value_and_influence(f, A, dim; corrected)
+            @test v == f(A, dim; corrected)
+            @test ψ == (influence(mean, A; dims = dim), influence(g, A; dims = dim, corrected))
+        end
+    end
+    xo = OffsetArray(A, -2, 5)
+    @test all(ψ -> axes(ψ) == axes(xo), influence(f, xo))
+    xd = DimArray(A, (Dim{:draw}(1:9), Dim{:chain}(1:4)))
+    @test all(ψ -> dims(ψ) == dims(xd), influence(f, xd))
+    @test all(ψ -> dims(ψ) == dims(xd), influence(f, xd, 1))
+    @inferred value_and_influence(f, X)
+    @inferred value_and_influence(f, A, 1)
+    @test_throws MethodError influence(f, A; dims = 1)   # StatsBase takes the dimension positionally
+    @test_throws MethodError influence(f, X; density = nothing)
+end
+
+@testset "delta method" begin
+    v, ψ = value_and_influence(mean_and_std, X)
+    g = ForwardDiff.gradient(w -> w[2] / w[1], collect(v))
+    @test g[1] .* ψ[1] .+ g[2] .* ψ[2] ≈ influence(variation, X)
+    v, ψ = value_and_influence(quantile, X, (0.25, 0.75))
+    @test ψ[2] .- ψ[1] ≈ influence(iqr, X)
+end
+
+@testset "mean_and_cov" begin
+    for dims in (1, 2), corrected in (true, false)
+        x = dims == 1 ? M : permutedims(M)
+        v, ψ = value_and_influence(mean_and_cov, x, dims; corrected)
+        @test v == mean_and_cov(x, dims; corrected)
+        @test ψ[1] == influence(mean, x; dims)
+        @test ψ[2] == influence(cov, x; dims, corrected)
+    end
+    @test value_and_influence(mean_and_cov, M) == value_and_influence(mean_and_cov, M, 1)
+    # Rows are the observations, so the mean's influence values are summed across columns.
+    (m, S), (ψm, ψS) = value_and_influence(mean_and_cov, M)
+    gm = ForwardDiff.gradient(w -> only(w * (S \ w')), m)
+    gS = ForwardDiff.gradient(W -> only(m * (W \ m')), S)
+    function T(p)
+        c = sum(p .* M; dims = 1)
+        return only(c * (wcov(p, N / (N - 1)) \ c'))
+    end
+    @test vec(sum(gm .* ψm; dims = 2)) .+ sum(gS .* ψS) ≈ ad_influence(T, N) rtol = 1.0e-10
+    @inferred value_and_influence(mean_and_cov, M)
+    # StatsBase.mean_and_cov takes only a DenseMatrix, with the dimension given positionally.
+    @test_throws MethodError influence(mean_and_cov, DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3))))
+    @test_throws MethodError influence(mean_and_cov, M; dims = 1)
+    @test_throws MethodError influence(mean_and_cov, M, pweights(ones(N)))
+end
+
+@testset "scattermat" begin
+    function T(p, c)
+        Z = M .- c
+        return N .* (Z' * (p .* Z))
+    end
+    S, ψ = value_and_influence(scattermat, M)
+    @test S == scattermat(M)
+    @test size(ψ) == size(S)
+    for I in CartesianIndices(S)
+        check_against_ad(p -> T(p, sum(p .* M; dims = 1))[I], (S[I], ψ[I]), S[I])
+    end
+    @test all(ψ .≈ (N - 1) .* influence(cov, M))
+    for c in (0, 1.5, [1.0 2.0 3.0])                        # a known center
+        Sc, ψc = value_and_influence(scattermat, M; mean = c)
+        @test Sc == scattermat(M; mean = c)
+        for I in CartesianIndices(Sc)
+            check_against_ad(p -> T(p, c)[I], (Sc[I], ψc[I]), Sc[I])
+        end
+    end
+    St, ψt = value_and_influence(scattermat, permutedims(M); dims = 2)   # variables as rows
+    @test St ≈ S
+    @test all(ψt .≈ ψ)
+    @test all(influence(scattermat, permutedims(M); dims = 2, mean = [1.0, 2.0, 3.0]) .≈ influence(scattermat, M; mean = [1.0 2.0 3.0]))
+    @test eltype(influence(scattermat, Float32.(M))[1, 2]) === Float32
+    @inferred value_and_influence(scattermat, M)
+    @inferred value_and_influence(scattermat, M; dims = 2)
+    @inferred value_and_influence(scattermat, M; mean = 0)
+    @test_throws ArgumentError influence(scattermat, M; dims = 3)   # accepted by StatsBase.scattermat
+    # StatsBase.scattermat takes only a DenseMatrix.
+    @test_throws MethodError influence(scattermat, DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3))))
+    @test_throws MethodError influence(scattermat, M, pweights(ones(N)))
+    @test_throws MethodError influence(scattermat, M; density = nothing)
+end
+
+@testset "cumulant" begin
+    function T(p, c)
+        m₂, m₃, m₄, m₅, m₆, m₇, m₈ = (wmean(p, (X .- c) .^ i) for i in 2:8)
+        return (
+            c, m₂, m₃, m₄ - 3 * m₂^2, m₅ - 10 * m₂ * m₃,
+            m₆ - 15 * m₂ * m₄ - 10 * m₃^2 + 30 * m₂^3,
+            m₇ - 21 * m₂ * m₅ - 35 * m₃ * m₄ + 210 * m₂^2 * m₃,
+            m₈ - 28 * m₂ * m₆ - 56 * m₃ * m₅ - 35 * m₄^2 + 420 * m₂^2 * m₄ + 560 * m₂ * m₃^2 - 630 * m₂^4,
+        )
+    end
+    for k in 1:8
+        check_against_ad(p -> T(p, wmean(p, X))[k], value_and_influence(cumulant, X, k), cumulant(X, k))
+        check_against_ad(p -> T(p, C)[k], value_and_influence(cumulant, X, k, C), cumulant(X, k, C))
+    end
+    check_shapes(cumulant, X, 4)
+    check_shapes(cumulant, X, 4, C)
+    v, ψ = value_and_influence(cumulant, X, 2:2:6)          # orders given as a range
+    @test v ≈ cumulant(X, 2:2:6)
+    @test size(ψ) == (3,)
+    @test ψ[2] == influence(cumulant, X, 4)
+    @test influence(cumulant, X, 1:3, C)[3] == influence(cumulant, X, 3, C)
+    @inferred value_and_influence(cumulant, X, 1:4)
+    @inferred value_and_influence(cumulant, X, 1:4, C)
+    xo = OffsetArray(reshape(X, 9, 4), -2, 5)               # the data's axes on the inside
+    @test all(ψ -> axes(ψ) == axes(xo), influence(cumulant, xo, 1:3))
+    xd = DimArray(reshape(X, 9, 4), (Dim{:draw}(1:9), Dim{:chain}(1:4)))
+    @test all(ψ -> dims(ψ) == dims(xd), influence(cumulant, xd, 1:3))
+    v, ψ = value_and_influence(cumulant, Float64[], 2)      # no data: NaN, as for `var`
+    @test isnan(v) && isempty(ψ)
+    @test eltype(influence(cumulant, Float32.(X), 3, C)) === Float64    # the center is Float64
+    x32 = rand(StableRNG(8), Float32, 10^6)                 # a running sum is too coarse for this
+    @test first(value_and_influence(cumulant, x32, 2)) ≈ var(Float64.(x32); corrected = false) rtol = 1.0e-6
+    @test influence(cumulant, [1, 2, 6], 3, 2) ≈ [-22, -21, 43]         # d³ - m₃, with m₃ = 21
+    # The powers of these deviations overflow as integers, which StatsBase.moment does not avoid.
+    @test influence(cumulant, [10^7, 2 * 10^7, 6 * 10^7], 3, 10^7) ≈ [-4.2e22, -4.1e22, 8.3e22]
+    (κ₂, κ₄), (ψ₂, ψ₄) = value_and_influence(cumulant, X, 2:2:4)    # kurtosis is κ₄ / κ₂²
+    @test ψ₄ ./ κ₂^2 .- (2 * κ₄ / κ₂^3) .* ψ₂ ≈ influence(kurtosis, X)
+    @test_throws ArgumentError influence(cumulant, X, 0)
+    @test_throws ArgumentError influence(cumulant, X, 0:2)
+    @test_throws MethodError influence(cumulant, X, [1, 2])  # StatsBase takes an integer or a range
+    @test_throws MethodError influence(cumulant, X, 2, pweights(ones(N)))
+end
+
+@testset "proportions" begin
+    k = rand(StableRNG(6), 1:4, N)
+    l = rand(StableRNG(7), 1:3, N)
+    v, ψ = value_and_influence(proportions, k, 1:4)
+    @test v == proportions(k, 1:4)
+    @test size(ψ) == size(v)
+    for c in 1:4
+        check_against_ad(p -> wmean(p, k .== c), (v[c], ψ[c]), v[c])
+    end
+    @test value_and_influence(proportions, k) == (v, ψ)
+    @test value_and_influence(proportions, k, 4) == (v, ψ)
+    @test first(influence(proportions, k .+ 10)) == ψ[1]    # levels from the data
+    v, ψ = value_and_influence(proportions, k, 2:3)         # a level is a level, wherever it is
+    @test v == proportions(k, 2:3)
+    @test ψ[1] == (k .== 2) .- v[1]
+
+    v, ψ = value_and_influence(proportions, k, l, (1:4, 1:3))
+    @test v == proportions(k, l, (1:4, 1:3))
+    @test size(ψ) == size(v)
+    for I in CartesianIndices(v)
+        check_against_ad(p -> wmean(p, (k .== I[1]) .& (l .== I[2])), (v[I], ψ[I]), v[I])
+    end
+    @test value_and_influence(proportions, k, l) == (v, ψ)
+    @test value_and_influence(proportions, k, l, (4, 3)) == (v, ψ)
+    @test influence(proportions, k, l, 3) == ψ[1:3, 1:3]
+    odds(q) = (q[1, 1] * q[2, 2]) / (q[1, 2] * q[2, 1])
+    T(p) = odds([wmean(p, (k .== a) .& (l .== b)) for a in 1:4, b in 1:3])
+    @test sum(ForwardDiff.gradient(odds, v) .* ψ) ≈ ad_influence(T, N) rtol = 1.0e-10
+
+    km = reshape(k, 9, 4)                                   # the data's axes on the inside
+    @test size(influence(proportions, km)[1]) == size(km)
+    ko = OffsetArray(km, -2, 5)
+    @test axes(influence(proportions, ko)[1]) == axes(ko)
+    kd = DimArray(km, (Dim{:draw}(1:9), Dim{:chain}(1:4)))
+    @test dims(influence(proportions, kd)[1]) == dims(kd)
+    @inferred value_and_influence(proportions, k)
+    @inferred value_and_influence(proportions, k, 2:3)
+    @inferred value_and_influence(proportions, k, l)
+    @inferred value_and_influence(proportions, k, l, (4, 3))
+    @test_throws MethodError influence(proportions, float.(k))      # as in StatsBase
+    @test_throws MethodError influence(proportions, k, l, 1:3)      # as in StatsBase
+    @test_throws MethodError influence(proportions, k, pweights(ones(N)))
+    # Integer weights are integer arrays too, but they are weights, not a second variable.
+    @test_throws MethodError influence(proportions, k, fweights(ones(Int, N)))
+    @test_throws DimensionMismatch influence(proportions, k, l[1:3])
+end
+
+@testset "weights are not a second variable" begin
+    w = fweights(ones(Int, N))
+    @test_throws MethodError influence(cov, M, w)
+    @test_throws MethodError influence(cor, M, w)
 end

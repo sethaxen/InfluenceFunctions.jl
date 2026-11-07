@@ -84,6 +84,34 @@ function value_and_influence(
     return v, b .* (x .- μx) .* (y .- μy) .- v
 end
 
+function value_and_influence(
+        ::typeof(Statistics.cov), X::AbstractMatrix{<:Real}; dims::Int = 1, corrected::Bool = true
+    )
+    C = Statistics.cov(X; dims, corrected)
+    return C, _with_variables(vars -> _cov_influences(C, vars, vars, corrected), X, dims)
+end
+
+function value_and_influence(
+        ::typeof(Statistics.cov), X::AbstractVecOrMat{<:Real}, Y::AbstractVecOrMat{<:Real};
+        dims::Int = 1, corrected::Bool = true
+    )
+    C = Statistics.cov(X, Y; dims, corrected)
+    ψ = _with_variables(X, dims) do xs
+        return _with_variables(ys -> _cov_influences(C, xs, ys, corrected), Y, dims)
+    end
+    return C, ψ
+end
+
+# Influence of each entry of `C`, the covariance matrix of the variables `xs` and `ys`.
+function _cov_influences(C, xs, ys, corrected)
+    μx, μy = map(Statistics.mean, xs), map(Statistics.mean, ys)
+    return map(C, CartesianIndices(C)) do c, I
+        j, l = Tuple(I)
+        b = _bessel_factor(typeof(c), length(xs[j]), corrected)
+        return b .* (xs[j] .- μx[j]) .* (ys[l] .- μy[l]) .- c
+    end
+end
+
 #####
 # cor
 #####
@@ -96,11 +124,42 @@ function value_and_influence(
     μy = Statistics.mean(y)
     σy = Statistics.std(y; mean = μy, corrected = false)
     ρ = clamp(_mean_cross(x, μx, y, μy) / (σx * σy), -1, 1)    # clamped, as Statistics.cor does
-    ψ = broadcast(x, y) do s, t
+    return ρ, _cor_influence(x, μx, σx, y, μy, σy, ρ)
+end
+
+function value_and_influence(::typeof(Statistics.cor), X::AbstractMatrix{<:Real}; dims::Int = 1)
+    R = Statistics.cor(X; dims)
+    return R, _with_variables(vars -> _cor_influences(R, vars, vars), X, dims)
+end
+
+function value_and_influence(
+        ::typeof(Statistics.cor), X::AbstractVecOrMat{<:Real}, Y::AbstractVecOrMat{<:Real};
+        dims::Int = 1
+    )
+    R = Statistics.cor(X, Y; dims)
+    ψ = _with_variables(X, dims) do xs
+        return _with_variables(ys -> _cor_influences(R, xs, ys), Y, dims)
+    end
+    return R, ψ
+end
+
+# Influence of each entry of `R`, the correlation matrix of the variables `xs` and `ys`.
+function _cor_influences(R, xs, ys)
+    μx, μy = map(Statistics.mean, xs), map(Statistics.mean, ys)
+    σx = map((v, m) -> Statistics.std(v; mean = m, corrected = false), xs, μx)
+    σy = map((v, m) -> Statistics.std(v; mean = m, corrected = false), ys, μy)
+    return map(R, CartesianIndices(R)) do ρ, I
+        j, l = Tuple(I)
+        return _cor_influence(xs[j], μx[j], σx[j], ys[l], μy[l], σy[l], ρ)
+    end
+end
+
+# Influence of the correlation `ρ` of `x` and `y`, given their means and standard deviations.
+function _cor_influence(x, μx, σx, y, μy, σy, ρ)
+    return broadcast(x, y) do s, t
         s̃, t̃ = (s - μx) / σx, (t - μy) / σy
         return s̃ * t̃ - ρ / 2 * (s̃^2 + t̃^2)
     end
-    return ρ, ψ
 end
 
 ##########
@@ -111,10 +170,26 @@ function value_and_influence(
         ::typeof(Statistics.quantile), x::AbstractArray{<:Real}, p::Real;
         density = QuantileSpacing(), kwargs...,
     )
-    0 < p < 1 || throw(DomainError(p, "the influence function of a quantile requires 0 < p < 1"))
+    _check_level(p)
     q = Statistics.quantile(x, p; kwargs...)
     g = fit_density(density, x)
     return q, _quantile_influence.(x, q, p, _density_at_quantile(g, q, p))
+end
+
+function value_and_influence(
+        ::typeof(Statistics.quantile), x::AbstractArray{<:Real},
+        ps::Union{AbstractArray{<:Real}, Tuple{Vararg{Real}}};
+        density = QuantileSpacing(), kwargs...,
+    )
+    foreach(_check_level, ps)
+    qs = Statistics.quantile(x, ps; kwargs...)
+    g = fit_density(density, x)    # one fit serves every level
+    return qs, map((q, p) -> _quantile_influence.(x, q, p, _density_at_quantile(g, q, p)), qs, ps)
+end
+
+function _check_level(p)
+    0 < p < 1 || throw(DomainError(p, "the influence function of a quantile requires 0 < p < 1"))
+    return nothing
 end
 
 # Influence at `t` of the quantile `q` at level `τ`, given the density `fq` at `q`.
@@ -155,3 +230,13 @@ _slice_length(x, v) = length(x) ÷ max(length(v), 1)
 
 # Mean of (x - μx)(y - μy)
 _mean_cross(x, μx, y, μy) = Statistics.mean(i -> (x[i] - μx) * (y[i] - μy), eachindex(x, y))
+
+# `f` applied to the variables of `X`: its slices along the axis that is not `dims`, or `X`
+# itself if it is a vector, which is one variable for either `dims`. Each call of `f` sees one
+# slice type, so its result is inferred. Statistics.cov and Statistics.cor accept any other
+# `dims`, but what they return then says nothing about the variables.
+function _with_variables(f, X, dims)
+    dims in (1, 2) || throw(ArgumentError("dims must be 1 or 2, got $dims"))
+    X isa AbstractVector && return f((X,))
+    return dims == 1 ? f(eachcol(X)) : f(eachrow(X))
+end
