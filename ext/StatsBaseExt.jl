@@ -291,12 +291,15 @@ end
 # weighted cov and cor
 ######################
 
-# These are unsupported, but weights are vectors, so without this method they would be taken for
-# a second variable. The signature is that of StatsBase's methods: for any other `x`, they are
-# a second variable to StatsBase too.
+# Weights are unsupported, and would otherwise be taken for a second variable.
 function InfluenceFunctions.value_and_influence(
-        f::Union{typeof(Statistics.cov), typeof(Statistics.cor)}, x::DenseMatrix{<:Real},
-        w::StatsBase.AbstractWeights; kwargs...
+        f::typeof(Statistics.cov), x::DenseMatrix{<:Real}, w::StatsBase.AbstractWeights; kwargs...
+    )
+    throw(MethodError(InfluenceFunctions.value_and_influence, (f, x, w)))
+end
+
+function InfluenceFunctions.value_and_influence(
+        f::typeof(Statistics.cor), x::DenseMatrix{<:Real}, w::StatsBase.AbstractWeights; kwargs...
     )
     throw(MethodError(InfluenceFunctions.value_and_influence, (f, x, w)))
 end

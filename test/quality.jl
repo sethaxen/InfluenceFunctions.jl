@@ -4,6 +4,14 @@ using Aqua, JET, StatsBase
     Aqua.test_all(InfluenceFunctions)
 end
 
+# Aqua's ambiguity check does not catch ambiguities between core methods and those of the
+# extension, and an ambiguous call throws a `MethodError` that `@test_throws` cannot tell
+# from the one a method throws on purpose.
+@testset "Ambiguities with StatsBaseExt" begin
+    ext = Base.get_extension(InfluenceFunctions, :StatsBaseExt)
+    @test isempty(Test.detect_ambiguities(InfluenceFunctions, ext))
+end
+
 # One representative call per method of the StatsBase extension.
 const EXT_CALLS = Any[
     (geomean, (X,), (;)),
