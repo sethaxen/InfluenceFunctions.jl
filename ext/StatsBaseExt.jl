@@ -353,11 +353,11 @@ function _cumulant_value_and_influence(x, k, c, center_est)
     a = similar(m, K + 1)    # a[j + 1] is aⱼ
     κ[1] = c
     a[1] = 1
-    for i in 1:K
-        a[i + 1] = -sum(j -> binomial(i, j) * m[j] * a[i - j + 1], 2:i; init = zero(T))
-        if i > 1    # from the derivative of log G, which is G′ / G
-            κ[i] = sum(j -> binomial(i - 1, j - 1) * m[j] * a[i - j + 1], 2:i)
-        end
+    a[2] = 0
+    for i in 2:K
+        a[i + 1] = -sum(j -> binomial(i, j) * m[j] * a[i - j + 1], 2:i)
+        # from the derivative of log G, which is G′ / G
+        κ[i] = sum(j -> binomial(i - 1, j - 1) * m[j] * a[i - j + 1], 2:i)
     end
     function influences(i)
         p = ntuple(l -> (l != 2 || center_est) * binomial(i, l - 1) * a[i - l + 2], i + 1)
