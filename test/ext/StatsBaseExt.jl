@@ -330,8 +330,12 @@ end
     @test_throws DimensionMismatch influence(proportions, k, l[1:3])
 end
 
-@testset "weights are not a second variable" begin
+@testset "weights are not taken for data" begin
     w = fweights(ones(Int, N))
+    # Taken for the `x` of `mean(f, x)`, weights would make the data `f`, and calling it would
+    # throw a `MethodError` too, so check whose error it is.
+    err = @test_throws MethodError influence(mean, X, w)
+    @test err.value.f === value_and_influence
     @test_throws MethodError influence(cov, M, w)
     @test_throws MethodError influence(cor, M, w)
 end
