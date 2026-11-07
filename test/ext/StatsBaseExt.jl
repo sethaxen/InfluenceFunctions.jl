@@ -240,6 +240,30 @@ end
     @test_throws MethodError influence(scattermat, M; density = nothing)
 end
 
+@testset "totalvar" begin
+    trace(S) = sum(j -> S[j, j], axes(S, 1))
+    V, ψ = value_and_influence(totalvar, M)                 # the rows are the observations
+    check_against_ad(p -> trace(wcov(p, N / (N - 1))), (V, ψ), totalvar(M))
+    @test V == totalvar(M)
+    @test influence(totalvar, M[:, 2:2]) ≈ influence(var, M[:, 2])    # one column: its variance
+    for x in (X, reshape(X, 3, 4, 3))                       # not a matrix: the variance of all elements
+        @test value_and_influence(totalvar, x) == value_and_influence(var, x)
+    end
+    Md = DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3)))
+    ψd = influence(totalvar, Md)
+    @test ψd isa DimArray
+    @test dims(ψd) == (dims(Md, 1),)
+    @test parent(ψd) ≈ ψ
+    Mo = OffsetArray(M, -2, 5)
+    ψo = influence(totalvar, Mo)
+    @test axes(ψo) == (axes(Mo, 1),)
+    @test parent(ψo) ≈ ψ
+    @test eltype(influence(totalvar, Float32.(M))) === Float32
+    @inferred value_and_influence(totalvar, M)
+    @inferred value_and_influence(totalvar, X)
+    @test_throws MethodError influence(totalvar, M; dims = 2)    # StatsBase.totalvar has no dims
+end
+
 @testset "cumulant" begin
     function T(p, c)
         m₂, m₃, m₄, m₅, m₆, m₇, m₈ = (wmean(p, (X .- c) .^ i) for i in 2:8)

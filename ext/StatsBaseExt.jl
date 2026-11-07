@@ -333,6 +333,24 @@ function InfluenceFunctions.value_and_influence(
 end
 
 ##########
+# totalvar
+##########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.totalvar), X::AbstractMatrix{<:Real}
+    )
+    vars, ψs = InfluenceFunctions.value_and_influence(Statistics.var, X; dims = 1)
+    return sum(vars), dropdims(sum(ψs; dims = 2); dims = 2)
+end
+
+# For any other array, StatsBase computes the variance of all elements.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.totalvar), x::AbstractArray{<:Real}
+    )
+    return InfluenceFunctions.value_and_influence(Statistics.var, x)
+end
+
+##########
 # cumulant
 ##########
 

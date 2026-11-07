@@ -17,9 +17,10 @@ Compute the estimate `value = f(args...; kwargs...)` together with its influence
 An influence value estimates the influence function of one estimate, evaluated at one
 observation of the data argument `x` (the first array in `args`). Its type is whatever the
 influence computation produces. `ψ` mirrors `value`, and has the array type and axes of `x`
-exactly when each data element contributes to only one estimate:
+exactly when the observations are the elements of `x` and each contributes to only one
+estimate:
 
-  1. **`value` is a number:** `ψ` is one array with the axes of `x`.
+  1. **`value` is a number:** `ψ` is one array, with one influence value per observation.
   2. **`value` reduces over `dims`** (`mean(x; dims)`): `ψ` is still one array with the
      axes of `x`, and each slice holds the influence values of its own estimate.
   3. **`value` is any other array** (`quantile(x, ps)`, `cov(X)`, `proportions(x)`): `ψ` has
@@ -29,9 +30,10 @@ exactly when each data element contributes to only one estimate:
      `ψ` has the same structure, and each element follows rules 1–3 as its estimator would
      on its own.
 
-Observations are the elements of `x`, except for `cov`, `cor` and `scattermat` of a matrix,
-where they are its slices along `dims`. For two-argument forms such as `cov(x, y)` and
-`proportions(x, y)`, observations are pairs, with the axes of `x`.
+Observations are the elements of `x`, except for `cov`, `cor`, `scattermat` and `totalvar` of
+a matrix, where they are its slices along `dims` (its rows, for `totalvar`), with the axes of
+`x` along `dims`. For two-argument forms such as `cov(x, y)` and `proportions(x, y)`,
+observations are pairs, with the axes of `x`.
 
 Two conventions are used:
 
