@@ -72,6 +72,11 @@ end
 # cov
 #####
 
+# Statistics.cov of a vector is its variance.
+function value_and_influence(::typeof(Statistics.cov), x::AbstractVector{<:Real}; corrected::Bool = true)
+    return value_and_influence(Statistics.var, x; corrected)
+end
+
 function value_and_influence(
         ::typeof(Statistics.cov), x::AbstractVector{<:Real}, y::AbstractVector{<:Real};
         corrected::Bool = true
@@ -115,6 +120,12 @@ end
 #####
 # cor
 #####
+
+# Statistics.cor of a vector is 1 for any data, so moving mass onto an observation changes nothing.
+function value_and_influence(::typeof(Statistics.cor), x::AbstractVector{<:Real})
+    ρ = Statistics.cor(x)
+    return ρ, fill!(similar(x, typeof(ρ)), zero(ρ))
+end
 
 function value_and_influence(
         ::typeof(Statistics.cor), x::AbstractVector{<:Real}, y::AbstractVector{<:Real}

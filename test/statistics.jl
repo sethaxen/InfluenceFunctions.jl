@@ -107,6 +107,18 @@ end
     @test all(iszero, influence(stdm, fill(2.0, 10), 2.0))   # constant data at the center
 end
 
+@testset "cov(x)" begin
+    for corrected in (true, false)
+        b = corrected ? N / (N - 1) : 1.0
+        Tv = p -> b * wmean(p, (X .- wmean(p, X)) .^ 2)
+        check_against_ad(Tv, value_and_influence(cov, X; corrected), cov(X; corrected))
+        @test value_and_influence(cov, X; corrected) == (cov(X; corrected), influence(var, X; corrected))
+    end
+    check_shapes(cov, X; vector_only = true)
+    @test value_and_influence(cov, [1, 2, 6]) == (cov([1, 2, 6]), influence(var, [1, 2, 6]))
+    @test_throws MethodError influence(cov, X; dims = 1)    # Statistics.cov(x) has no dims
+end
+
 @testset "cov" begin
     Y = X .+ randn(StableRNG(2), N)
     for corrected in (true, false)
@@ -191,6 +203,14 @@ end
     @test_throws ArgumentError influence(cov, A, A; dims = 3)   # accepted by Statistics.cov
     @test_throws DimensionMismatch influence(cov, A, B[1:5, :])
     @test_throws MethodError influence(cov, x, x; dims = 1)     # two vectors have no dims
+end
+
+@testset "cor(x)" begin
+    check_against_ad(p -> 1.0, value_and_influence(cor, X), cor(X))   # 1 for any data
+    check_shapes(cor, X; vector_only = true)
+    @test influence(cor, [1, 2, 6]) == zeros(3)
+    @test influence(cor, [1.0, NaN, Inf]) == zeros(3)   # cor is still 1, so ψ is not NaN
+    @test_throws MethodError influence(cor, X; dims = 1)
 end
 
 @testset "cor" begin
