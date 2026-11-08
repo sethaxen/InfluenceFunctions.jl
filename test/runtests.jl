@@ -2,7 +2,10 @@ using InfluenceFunctions
 using Test
 
 # Run a subset with: Pkg.test(; test_args=["statistics"])
-const TEST_GROUPS = ["InfluenceFunctions", "density", "statistics", "ext/StatsBaseExt"]
+const TEST_GROUPS = [
+    "InfluenceFunctions", "density", "statistics",
+    "ext/StatsBaseExt/" .* ["weights", "moments", "scalarstats", "cov", "counts", "partialcor"]...,
+]
 const SELECTED = isempty(ARGS) ? [TEST_GROUPS; "quality"] : ARGS
 
 isfile(joinpath(@__DIR__, "testutils.jl")) && include("testutils.jl")
