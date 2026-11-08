@@ -256,11 +256,14 @@ end
     for x in (X, reshape(X, 3, 4, 3))                       # not a matrix: the variance of all elements
         @test value_and_influence(genvar, x) == value_and_influence(var, x)
     end
-    # A singular covariance: every observation lies in the span of the others, so moving mass
+    # A singular covariance: every centered observation lies in its column space, so moving mass
     # onto it keeps the determinant at 0.
+    wcovof(p, A) = (Z = A .- sum(p .* A; dims = 1); b .* (Z' * (p .* Z)))
     for Ms in ([M[:, 1:2] fill(2.0, N)], [M[:, 1] M[:, 1] M[:, 3]])
         @test genvar(Ms) == 0
-        @test all(iszero, influence(genvar, Ms))
+        ψs = influence(genvar, Ms)
+        @test all(iszero, ψs)
+        @test ψs ≈ ad_influence(p -> det3(wcovof(p, Ms)), N) atol = 1.0e-12
     end
     Md = DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3)))
     Gd, ψd = value_and_influence(genvar, Md)

@@ -336,18 +336,26 @@ end
 # genvar
 ########
 
-# The delta method on `cov`, with the gradient G C⁻¹ of the determinant at the symmetric C. If
-# G = 0, every observation lies in the span of C, which its adjugate maps to 0, so ψ = 0.
+# The delta method on `cov`. For `X` with k columns, let zᵢ be the centered row i, S the mean of
+# the zᵢzᵢᵀ, and b the Bessel factor, so that C = cov(X) = bS. The influence values of C are
+# b zᵢzᵢᵀ - C, and the gradient of the determinant at the symmetric C is G C⁻¹, so
+# ψᵢ = G tr(C⁻¹(b zᵢzᵢᵀ - C)) = G (zᵢᵀS⁻¹zᵢ - k). If G = 0, then ψ = 0: the formula gives that
+# wherever C⁻¹ exists, and where C is singular, every centered observation lies in its column
+# space, which the gradient, its adjugate, maps to 0.
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.genvar), X::AbstractMatrix{<:Real}
     )
     G = StatsBase.genvar(X)
     ψ = fill!(similar(X, typeof(G), axes(X, 1)), zero(G))
     iszero(G) && return G, ψ
-    C, ψC = InfluenceFunctions.value_and_influence(Statistics.cov, X)
-    for (Aⱼₗ, ψⱼₗ) in zip(inv(C), ψC)
-        ψ .+= (G * Aⱼₗ) .* ψⱼₗ
+    xs = eachcol(X)
+    μs = map(Statistics.mean, xs)
+    S = [InfluenceFunctions._mean_cross(a, μa, c, μc) for (a, μa) in zip(xs, μs), (c, μc) in zip(xs, μs)]
+    A = inv(S)
+    for j in axes(A, 1), l in axes(A, 2)    # ψᵢ = zᵢᵀS⁻¹zᵢ
+        ψ .+= A[j, l] .* (xs[j] .- μs[j]) .* (xs[l] .- μs[l])
     end
+    ψ .= G .* (ψ .- size(X, 2))
     return G, ψ
 end
 function InfluenceFunctions.value_and_influence(
