@@ -341,13 +341,15 @@ end
 # b zᵢzᵢᵀ - C, and the gradient of the determinant at the symmetric C is G C⁻¹, so
 # ψᵢ = G tr(C⁻¹(b zᵢzᵢᵀ - C)) = G (zᵢᵀS⁻¹zᵢ - k). If G = 0, then ψ = 0: the formula gives that
 # wherever C⁻¹ exists, and where C is singular, every centered observation lies in its column
-# space, which the gradient, its adjugate, maps to 0.
+# space, which the gradient, its adjugate, maps to 0. If G is NaN, as from a NaN in the data or
+# a single row, then so is ψ.
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.genvar), X::AbstractMatrix{<:Real}
     )
     G = StatsBase.genvar(X)
     ψ = fill!(similar(X, typeof(G), axes(X, 1)), zero(G))
     iszero(G) && return G, ψ
+    isnan(G) && return G, fill!(ψ, G)
     xs = eachcol(X)
     μs = map(Statistics.mean, xs)
     S = [InfluenceFunctions._mean_cross(a, μa, c, μc) for (a, μa) in zip(xs, μs), (c, μc) in zip(xs, μs)]
@@ -388,12 +390,15 @@ end
 
 # ρ is the correlation of the residuals of `x` and `y` regressed on `[1 Z]`. The residuals are
 # orthogonal to `[1 Z]`, so the first-order change of the coefficients leaves their covariance
-# unchanged, and ψ is the influence of the correlation of the residuals.
+# unchanged, and ψ is the influence of the correlation of the residuals. If ρ is NaN, as from a
+# NaN in the data or collinear covariates, for which the regression has no unique solution, then
+# so is ψ.
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.partialcor), x::AbstractVector{<:Real}, y::AbstractVector{<:Real},
         Z::AbstractVecOrMat{<:Real}
     )
     ρ = StatsBase.partialcor(x, y, Z)
+    isnan(ρ) && return ρ, fill!(similar(x, typeof(ρ)), ρ)
     ex, ey = InfluenceFunctions._with_variables(Z, 1) do zs
         μs = map(Statistics.mean, zs)
         S = [InfluenceFunctions._mean_cross(a, μa, b, μb) for (a, μa) in zip(zs, μs), (b, μb) in zip(zs, μs)]

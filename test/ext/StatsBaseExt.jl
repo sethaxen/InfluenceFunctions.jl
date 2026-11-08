@@ -265,6 +265,13 @@ end
         @test all(iszero, ψs)
         @test ψs ≈ ad_influence(p -> det3(wcovof(p, Ms)), N) atol = 1.0e-12
     end
+    Mn = copy(M)
+    Mn[2, 2] = NaN
+    for Ms in (Mn, M[1:1, :])                               # a NaN value, from a NaN or one row
+        Gn, ψn = value_and_influence(genvar, Ms)
+        @test isnan(Gn)
+        @test all(isnan, ψn)
+    end
     Md = DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3)))
     Gd, ψd = value_and_influence(genvar, Md)
     @test Gd == genvar(Md)
@@ -329,6 +336,14 @@ end
     @test eltype(influence(partialcor, Float32.(x), Float32.(y), Float32.(Z))) === Float32
     ρm, ψm = value_and_influence(partialcor, Float32.(x), Float32.(y), Z)   # mixed precision
     @test eltype(ψm) === typeof(ρm)
+    xn = copy(x)
+    xn[2] = NaN
+    # A NaN value, from a NaN, a constant covariate, or collinear covariates
+    for (xs, Zs) in ((xn, Z), (x, fill(2.0, N)), (x, [Z fill(2.0, N)]), (x, [Z Z]))
+        ρn, ψn = value_and_influence(partialcor, xs, y, Zs)
+        @test isnan(ρn)
+        @test all(isnan, ψn)
+    end
     @inferred value_and_influence(partialcor, x, y, Z)
     @inferred value_and_influence(partialcor, x, y, vec(Z))
     @test_throws DimensionMismatch influence(partialcor, x, y[1:(end - 1)], Z)
