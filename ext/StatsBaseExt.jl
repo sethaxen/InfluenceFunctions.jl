@@ -369,7 +369,7 @@ function _mean_and_cov(X)
     μs = Statistics.mean(X; dims = 1)
     S = [
         InfluenceFunctions._mean_cross(view(X, :, j), μs[j], view(X, :, l), μs[l])
-        for j in axes(X, 2), l in axes(X, 2)
+            for j in axes(X, 2), l in axes(X, 2)
     ]
     return μs, S
 end
