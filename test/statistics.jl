@@ -386,7 +386,8 @@ end
 @testset "quantile(f, x, p)" begin
     f = t -> abs(t - 5)                                                 # not monotone
     if !hasmethod(quantile, Tuple{Function, Vector{Float64}, Float64})
-        @test_throws MethodError influence(quantile, f, X, 0.3)         # older Statistics
+        err = @test_throws MethodError influence(quantile, f, X, 0.3)   # older Statistics
+        @test err.value.f === quantile
     else
         fdensity = t -> pdf(D, 5 + t) + pdf(D, 5 - t)                   # the density of f(x)
         v, ψ = value_and_influence(quantile, f, X, 0.3; density = fdensity)
@@ -453,7 +454,8 @@ end
 @testset "median(f, x)" begin
     f = t -> abs(t - 5)                                                 # not monotone
     if !hasmethod(median, Tuple{Function, Vector{Float64}})
-        @test_throws MethodError influence(median, f, X)                # older Statistics
+        err = @test_throws MethodError influence(median, f, X)          # older Statistics
+        @test err.value.f === median
     else
         for x in (X, X[1:35])                                           # even and odd n
             v, ψ = value_and_influence(median, f, x)
