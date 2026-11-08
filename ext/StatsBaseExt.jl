@@ -350,12 +350,10 @@ function InfluenceFunctions.value_and_influence(
     ψ = fill!(similar(X, typeof(G), axes(X, 1)), zero(G))
     iszero(G) && return G, ψ
     isnan(G) && return G, fill!(ψ, G)
-    xs = eachcol(X)
-    μs = map(Statistics.mean, xs)
-    S = [InfluenceFunctions._mean_cross(a, μa, c, μc) for (a, μa) in zip(xs, μs), (c, μc) in zip(xs, μs)]
-    A = inv(S)
-    for j in axes(A, 1), l in axes(A, 2)    # ψᵢ = zᵢᵀS⁻¹zᵢ
-        ψ .+= A[j, l] .* (xs[j] .- μs[j]) .* (xs[l] .- μs[l])
+    μs, S = _mean_and_cov(X)
+    P = inv(S)
+    for j in axes(X, 2), l in axes(X, 2)    # ψᵢ = zᵢᵀS⁻¹zᵢ
+        ψ .+= P[j, l] .* (view(X, :, j) .- μs[j]) .* (view(X, :, l) .- μs[l])
     end
     ψ .= G .* (ψ .- size(X, 2))
     return G, ψ
@@ -364,6 +362,16 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.genvar), x::AbstractArray{<:Real}
     )
     return InfluenceFunctions.value_and_influence(Statistics.var, x)
+end
+
+# Allocates less than mean_and_cov, does not correct, accepts an AbstractVecOrMat
+function _mean_and_cov(X)
+    μs = Statistics.mean(X; dims = 1)
+    S = [
+        InfluenceFunctions._mean_cross(view(X, :, j), μs[j], view(X, :, l), μs[l])
+        for j in axes(X, 2), l in axes(X, 2)
+    ]
+    return μs, S
 end
 
 ##########
@@ -399,23 +407,21 @@ function InfluenceFunctions.value_and_influence(
     )
     ρ = StatsBase.partialcor(x, y, Z)
     isnan(ρ) && return ρ, fill!(similar(x, typeof(ρ)), ρ)
-    ex, ey = InfluenceFunctions._with_variables(Z, 1) do zs
-        μs = map(Statistics.mean, zs)
-        S = [InfluenceFunctions._mean_cross(a, μa, b, μb) for (a, μa) in zip(zs, μs), (b, μb) in zip(zs, μs)]
-        return _residuals(x, zs, μs, S), _residuals(y, zs, μs, S)
-    end
+    μs, S = _mean_and_cov(Z)
+    ex = _residuals(x, Z, μs, S)
+    ey = _residuals(y, Z, μs, S)
     return ρ, InfluenceFunctions.influence(Statistics.cor, ex, ey)
 end
 
-# Residuals of `v` regressed on the variables `zs` and an intercept, given their means `μs` and
-# the means `S` of the products of their deviations.
-function _residuals(v, zs, μs, S)
+# Residuals of `v` regressed on the columns of `Z` and an intercept, given their means `μs` and
+# uncorrected covariance matrix `S`.
+function _residuals(v, Z, μs, S)
     μ = Statistics.mean(v)
-    β = S \ [InfluenceFunctions._mean_cross(z, μz, v, μ) for (z, μz) in zip(zs, μs)]
-    e = similar(v, eltype(β))    # with the precision of `zs` too
+    β = S \ [InfluenceFunctions._mean_cross(view(Z, :, j), μs[j], v, μ) for j in axes(Z, 2)]
+    e = similar(v, eltype(β))    # with the precision of `Z` too
     e .= v .- μ
-    for (z, μz, βⱼ) in zip(zs, μs, β)
-        e .-= βⱼ .* (z .- μz)
+    for j in axes(Z, 2)
+        e .-= β[j] .* (view(Z, :, j) .- μs[j])
     end
     return e
 end
