@@ -374,6 +374,38 @@ function InfluenceFunctions.value_and_influence(
     return InfluenceFunctions.value_and_influence(Statistics.var, x)
 end
 
+############
+# partialcor
+############
+
+# ρ is the correlation of the residuals of `x` and `y` regressed on `[1 Z]`. The residuals are
+# orthogonal to `[1 Z]`, so the first-order change of the coefficients leaves their covariance
+# unchanged, and ψ is the influence of the correlation of the residuals.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.partialcor), x::AbstractVector{<:Real}, y::AbstractVector{<:Real},
+        Z::AbstractVecOrMat{<:Real}
+    )
+    ρ = StatsBase.partialcor(x, y, Z)
+    ex, ey = InfluenceFunctions._with_variables(Z, 1) do zs
+        μs = map(Statistics.mean, zs)
+        S = [InfluenceFunctions._mean_cross(a, μa, b, μb) for (a, μa) in zip(zs, μs), (b, μb) in zip(zs, μs)]
+        return _residuals(x, zs, μs, S), _residuals(y, zs, μs, S)
+    end
+    return ρ, InfluenceFunctions.influence(Statistics.cor, ex, ey)
+end
+
+# Residuals of `v` regressed on the variables `zs` and an intercept, given their means `μs` and
+# the means `S` of the products of their deviations.
+function _residuals(v, zs, μs, S)
+    μ = Statistics.mean(v)
+    β = S \ [InfluenceFunctions._mean_cross(z, μz, v, μ) for (z, μz) in zip(zs, μs)]
+    e = v .- μ
+    for (z, μz, βⱼ) in zip(zs, μs, β)
+        e .-= βⱼ .* (z .- μz)
+    end
+    return e
+end
+
 ##########
 # cumulant
 ##########

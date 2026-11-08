@@ -32,8 +32,9 @@ estimate:
 
 Observations are the elements of `x`, except for `cov`, `cor`, `scattermat`, `genvar` and
 `totalvar` of a matrix, where they are its slices along `dims` (its rows, for `genvar` and
-`totalvar`), with the axes of `x` along `dims`. For two-argument forms such as `cov(x, y)` and `proportions(x, y)`,
-observations are pairs, with the axes of `x`.
+`totalvar`), with the axes of `x` along `dims`. For forms with several data arguments, such
+as `cov(x, y)`, `proportions(x, y)` and `partialcor(x, y, Z)`, observations are pairs or
+triples, with the axes of `x`.
 
 Two conventions are used:
 

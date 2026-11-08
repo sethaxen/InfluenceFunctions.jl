@@ -41,6 +41,8 @@ const EXT_CALLS = Any[
     (genvar, (X,), (;)),
     (totalvar, (M,), (;)),
     (totalvar, (X,), (;)),
+    (partialcor, (M[:, 1], M[:, 2], M[:, 3]), (;)),
+    (partialcor, (M[:, 1], M[:, 2], M[:, 2:3]), (;)),
     (cumulant, (X, 4), (;)),
     (cumulant, (X, 1:4), (;)),
     (cumulant, (X, 1:4, C), (;)),
