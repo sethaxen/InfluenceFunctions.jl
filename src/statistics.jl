@@ -72,6 +72,14 @@ end
 # cov
 #####
 
+# Statistics.cov of a vector is its variance, though for ranges and empty vectors it is not
+# computed as Statistics.var computes it.
+function value_and_influence(::typeof(Statistics.cov), x::AbstractVector{<:Real}; corrected::Bool = true)
+    v = Statistics.cov(x; corrected)
+    b = _bessel_factor(typeof(v), length(x), corrected)
+    return v, b .* abs2.(x .- Statistics.mean(x)) .- v
+end
+
 function value_and_influence(
         ::typeof(Statistics.cov), x::AbstractVector{<:Real}, y::AbstractVector{<:Real};
         corrected::Bool = true
@@ -115,6 +123,12 @@ end
 #####
 # cor
 #####
+
+# Statistics.cor of a vector is 1 for any data, so moving mass onto an observation changes nothing.
+function value_and_influence(::typeof(Statistics.cor), x::AbstractVector{<:Real})
+    ρ = Statistics.cor(x)
+    return ρ, fill!(similar(x, typeof(ρ)), zero(ρ))
+end
 
 function value_and_influence(
         ::typeof(Statistics.cor), x::AbstractVector{<:Real}, y::AbstractVector{<:Real}
@@ -167,24 +181,24 @@ end
 ##########
 
 function value_and_influence(
-        ::typeof(Statistics.quantile), x::AbstractArray{<:Real}, p::Real;
+        ::typeof(Statistics.quantile), x::AbstractArray{<:Real},
+        p::Union{Real, AbstractArray{<:Real}, Tuple{Vararg{Real}}};
         density = QuantileSpacing(), kwargs...,
     )
-    _check_level(p)
+    foreach(_check_level, p)
     q = Statistics.quantile(x, p; kwargs...)
-    g = fit_density(density, x)
-    return q, _quantile_influence.(x, q, p, _density_at_quantile(g, q, p))
+    return q, _quantile_influences(density, x, q, p)
 end
 
 function value_and_influence(
-        ::typeof(Statistics.quantile), x::AbstractArray{<:Real},
-        ps::Union{AbstractArray{<:Real}, Tuple{Vararg{Real}}};
+        ::typeof(Statistics.quantile), f::Function, x::AbstractArray,
+        p::Union{Real, AbstractArray{<:Real}, Tuple{Vararg{Real}}};
         density = QuantileSpacing(), kwargs...,
     )
-    foreach(_check_level, ps)
-    qs = Statistics.quantile(x, ps; kwargs...)
-    g = fit_density(density, x)    # one fit serves every level
-    return qs, map((q, p) -> _quantile_influence.(x, q, p, _density_at_quantile(g, q, p)), qs, ps)
+    foreach(_check_level, p)
+    z = f.(x)
+    q = Statistics.quantile(z, p; kwargs...)
+    return q, _quantile_influences(density, z, q, p)
 end
 
 function _check_level(p)
@@ -194,6 +208,13 @@ end
 
 # Influence at `t` of the quantile `q` at level `τ`, given the density `fq` at `q`.
 _quantile_influence(t, q, τ, fq) = (τ - (t <= q)) / fq
+
+# Influence values on the sample `y` of its quantiles `q` at levels `p`, from one density fit.
+# `q` and `p` are numbers, or matching containers of them.
+function _quantile_influences(density, y, q, p)
+    g = fit_density(density, y)
+    return map((qₗ, pₗ) -> _quantile_influence.(y, qₗ, pₗ, _density_at_quantile(g, qₗ, pₗ)), q, p)
+end
 
 ########
 # median
@@ -216,6 +237,14 @@ function value_and_influence(
         end
     end
     return m, _quantile_influence.(x, m, τ, fm)
+end
+
+function value_and_influence(
+        ::typeof(Statistics.median), f::Function, x::AbstractArray; density = QuantileSpacing()
+    )
+    z = f.(x)
+    m = Statistics.median(z)
+    return m, _quantile_influences(density, z, m, oftype(float(m), 1 // 2))
 end
 
 #######

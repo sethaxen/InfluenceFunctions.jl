@@ -107,6 +107,23 @@ end
     @test all(iszero, influence(stdm, fill(2.0, 10), 2.0))   # constant data at the center
 end
 
+@testset "cov(x)" begin
+    for corrected in (true, false)
+        b = corrected ? N / (N - 1) : 1.0
+        Tv = p -> b * wmean(p, (X .- wmean(p, X)) .^ 2)
+        check_against_ad(Tv, value_and_influence(cov, X; corrected), cov(X; corrected))
+        @test value_and_influence(cov, X; corrected) == (cov(X; corrected), influence(var, X; corrected))
+    end
+    check_shapes(cov, X; vector_only = true)
+    @test value_and_influence(cov, [1, 2, 6]) == (cov([1, 2, 6]), influence(var, [1, 2, 6]))
+    for x in (1:10, 0.1:0.1:2.0, Float64[])                 # where Statistics.var computes it otherwise
+        v, ψ = value_and_influence(cov, x)
+        @test isequal(v, cov(x))
+        @test ψ ≈ influence(var, collect(x))
+    end
+    @test_throws MethodError influence(cov, X; dims = 1)    # Statistics.cov(x) has no dims
+end
+
 @testset "cov" begin
     Y = X .+ randn(StableRNG(2), N)
     for corrected in (true, false)
@@ -191,6 +208,14 @@ end
     @test_throws ArgumentError influence(cov, A, A; dims = 3)   # accepted by Statistics.cov
     @test_throws DimensionMismatch influence(cov, A, B[1:5, :])
     @test_throws MethodError influence(cov, x, x; dims = 1)     # two vectors have no dims
+end
+
+@testset "cor(x)" begin
+    check_against_ad(p -> 1.0, value_and_influence(cor, X), cor(X))   # 1 for any data
+    check_shapes(cor, X; vector_only = true)
+    @test influence(cor, [1, 2, 6]) == zeros(3)
+    @test influence(cor, [1.0, NaN, Inf]) == zeros(3)   # cor is still 1, so ψ is not NaN
+    @test_throws MethodError influence(cor, X; dims = 1)
 end
 
 @testset "cor" begin
@@ -358,6 +383,37 @@ end
     @inferred value_and_influence(quantile, X, (0.25, 0.75))
 end
 
+@testset "quantile(f, x, p)" begin
+    f = t -> abs(t - 5)                                                 # not monotone
+    fdensity = t -> pdf(D, 5 + t) + pdf(D, 5 - t)                       # the density of f(x)
+    v, ψ = value_and_influence(quantile, f, X, 0.3; density = fdensity)
+    @test v == quantile(f.(X), 0.3)                                     # as Statistics computes it
+    @test ψ ≈ (0.3 .- (f.(X) .<= v)) ./ fdensity(v)
+    for p in (0.3, [0.1 0.25 0.5; 0.6 0.75 0.9], (0.25, 0.75))
+        v, ψ = value_and_influence(quantile, f, X, p)
+        @test v == quantile(f.(X), p)
+        @test ψ == influence(quantile, f.(X), p)
+    end
+    v, ψ = value_and_influence(quantile, f, X, [0.1, 0.9]; alpha = 0.0, beta = 0.0)
+    @test v == quantile(f.(X), [0.1, 0.9]; alpha = 0.0, beta = 0.0)
+    @test ψ == influence(quantile, f.(X), [0.1, 0.9]; alpha = 0.0, beta = 0.0)
+    perm = sortperm(f.(X))                                              # `sorted` means f.(x) is sorted
+    @test influence(quantile, f, X[perm], 0.3; sorted = true) ≈ influence(quantile, f, X, 0.3)[perm]
+    fits = Ref(0)                                                       # one fit serves every level
+    influence(quantile, f, X, [0.1, 0.9]; density = CountingDensity(fits))
+    @test fits[] == 1
+    xd = DimArray(X, Dim{:draw}(1:N))
+    @test dims(influence(quantile, f, xd, 0.3)) == dims(xd)
+    @test dims(influence(quantile, f, xd, [0.1, 0.9])[1]) == dims(xd)
+    @test eltype(influence(quantile, f, Float32.(X), 0.3f0)) === Float32
+    @inferred value_and_influence(quantile, f, X, 0.3)
+    @inferred value_and_influence(quantile, f, X, [0.1, 0.9])
+    for p in (0.0, [0.5, 1.0])
+        @test_throws DomainError influence(quantile, f, X, p)
+    end
+    @test_throws MethodError influence(quantile, f, X, 0.3; dims = 1)   # as in Statistics
+end
+
 @testset "median" begin
     for x in (X, X[1:35])                                               # even and odd n
         v, ψ = value_and_influence(median, x)
@@ -388,4 +444,26 @@ end
     @test all(isinf, influence(median, X; density = Returns(0.0)))
     @test_throws ArgumentError influence(median, X; density = 42)
     @test_throws ArgumentError influence(median, Float64[])
+end
+
+@testset "median(f, x)" begin
+    f = t -> abs(t - 5)                                                 # not monotone
+    for x in (X, X[1:35])                                               # even and odd n
+        v, ψ = value_and_influence(median, f, x)
+        @test v == median(f.(x))                                        # as Statistics computes it
+        @test ψ == influence(median, f.(x))
+    end
+    fdensity = t -> pdf(D, 5 + t) + pdf(D, 5 - t)                       # the density of f(x)
+    v, ψ = value_and_influence(median, f, X; density = fdensity)
+    @test ψ ≈ (0.5 .- (f.(X) .<= v)) ./ fdensity(v)
+    A = reshape(X, 9, 4)                                                # all elements, of any shape
+    v, ψ = value_and_influence(median, f, A)
+    @test v == median(f.(A))
+    @test size(ψ) == size(A)
+    @test vec(ψ) ≈ influence(median, f, X)
+    xd = DimArray(A, (Dim{:draw}(1:9), Dim{:chain}(1:4)))
+    @test dims(influence(median, f, xd)) == dims(xd)
+    @test eltype(influence(median, f, Float32.(X))) === Float32
+    @inferred value_and_influence(median, f, X)
+    @test_throws MethodError influence(median, f, A; dims = 1)          # as in Statistics
 end

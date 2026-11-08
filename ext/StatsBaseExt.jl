@@ -287,9 +287,17 @@ function InfluenceFunctions.value_and_influence(
     return (m, C), (ψm, ψC)
 end
 
-######################
-# weighted cov and cor
-######################
+############################
+# weighted mean, cov and cor
+############################
+
+# Weights are unsupported. They would otherwise be taken for the `x` of `mean(f, x)`, with the
+# data as `f`, which StatsBase computes as a weighted mean before `f` fails to be called.
+function InfluenceFunctions.value_and_influence(
+        f::typeof(Statistics.mean), x::AbstractArray, w::StatsBase.AbstractWeights; kwargs...
+    )
+    throw(MethodError(InfluenceFunctions.value_and_influence, (f, x, w)))
+end
 
 # Weights are unsupported, and would otherwise be taken for a second variable.
 function InfluenceFunctions.value_and_influence(
@@ -322,6 +330,100 @@ function InfluenceFunctions.value_and_influence(
         end
     end
     return S, ψ
+end
+
+########
+# genvar
+########
+
+# The delta method on `cov`. For `X` with k columns, let zᵢ be the centered row i, S the mean of
+# the zᵢzᵢᵀ, and b the Bessel factor, so that C = cov(X) = bS. The influence values of C are
+# b zᵢzᵢᵀ - C, and the gradient of the determinant at the symmetric C is G C⁻¹, so
+# ψᵢ = G tr(C⁻¹(b zᵢzᵢᵀ - C)) = G (zᵢᵀS⁻¹zᵢ - k). If G = 0, then ψ = 0: the formula gives that
+# wherever C⁻¹ exists, and where C is singular, every centered observation lies in its column
+# space, which the gradient, its adjugate, maps to 0. If G is NaN, as from a NaN in the data or
+# a single row, then so is ψ.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.genvar), X::AbstractMatrix{<:Real}
+    )
+    G = StatsBase.genvar(X)
+    ψ = fill!(similar(X, typeof(G), axes(X, 1)), zero(G))
+    iszero(G) && return G, ψ
+    isnan(G) && return G, fill!(ψ, G)
+    μs, S = _mean_and_cov(X)
+    P = inv(S)
+    for j in axes(X, 2), l in axes(X, 2)    # ψᵢ = zᵢᵀS⁻¹zᵢ
+        ψ .+= P[j, l] .* (view(X, :, j) .- μs[j]) .* (view(X, :, l) .- μs[l])
+    end
+    ψ .= G .* (ψ .- size(X, 2))
+    return G, ψ
+end
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.genvar), x::AbstractArray{<:Real}
+    )
+    return InfluenceFunctions.value_and_influence(Statistics.var, x)
+end
+
+# Allocates less than mean_and_cov, does not correct, accepts an AbstractVecOrMat
+function _mean_and_cov(X)
+    μs = Statistics.mean(X; dims = 1)
+    S = [
+        InfluenceFunctions._mean_cross(view(X, :, j), μs[j], view(X, :, l), μs[l])
+            for j in axes(X, 2), l in axes(X, 2)
+    ]
+    return μs, S
+end
+
+##########
+# totalvar
+##########
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.totalvar), X::AbstractMatrix{<:Real}
+    )
+    vars, ψs = InfluenceFunctions.value_and_influence(Statistics.var, X; dims = 1)
+    return sum(vars), dropdims(sum(ψs; dims = 2); dims = 2)
+end
+
+# For any other array, StatsBase computes the variance of all elements.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.totalvar), x::AbstractArray{<:Real}
+    )
+    return InfluenceFunctions.value_and_influence(Statistics.var, x)
+end
+
+############
+# partialcor
+############
+
+# ρ is the correlation of the residuals of `x` and `y` regressed on `[1 Z]`. The residuals are
+# orthogonal to `[1 Z]`, so the first-order change of the coefficients leaves their covariance
+# unchanged, and ψ is the influence of the correlation of the residuals. If ρ is NaN, as from a
+# NaN in the data or collinear covariates, for which the regression has no unique solution, then
+# so is ψ.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.partialcor), x::AbstractVector{<:Real}, y::AbstractVector{<:Real},
+        Z::AbstractVecOrMat{<:Real}
+    )
+    ρ = StatsBase.partialcor(x, y, Z)
+    isnan(ρ) && return ρ, fill!(similar(x, typeof(ρ)), ρ)
+    μs, S = _mean_and_cov(Z)
+    ex = _residuals(x, Z, μs, S)
+    ey = _residuals(y, Z, μs, S)
+    return ρ, InfluenceFunctions.influence(Statistics.cor, ex, ey)
+end
+
+# Residuals of `v` regressed on the columns of `Z` and an intercept, given their means `μs` and
+# uncorrected covariance matrix `S`.
+function _residuals(v, Z, μs, S)
+    μ = Statistics.mean(v)
+    β = S \ [InfluenceFunctions._mean_cross(view(Z, :, j), μs[j], v, μ) for j in axes(Z, 2)]
+    e = similar(v, eltype(β))    # with the precision of `Z` too
+    e .= v .- μ
+    for j in axes(Z, 2)
+        e .-= β[j] .* (view(Z, :, j) .- μs[j])
+    end
+    return e
 end
 
 ##########

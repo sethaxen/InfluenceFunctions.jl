@@ -240,6 +240,117 @@ end
     @test_throws MethodError influence(scattermat, M; density = nothing)
 end
 
+@testset "genvar" begin
+    det2(S) = S[1, 1] * S[2, 2] - S[1, 2] * S[2, 1]
+    det3(S) = S[1, 1] * det2(S[2:3, 2:3]) - S[1, 2] * det2(S[2:3, [1, 3]]) + S[1, 3] * det2(S[2:3, 1:2])
+    b = N / (N - 1)
+    G, ψ = value_and_influence(genvar, M)                   # the rows are the observations
+    check_against_ad(p -> det3(wcov(p, b)), (G, ψ), genvar(M))
+    @test G == genvar(M)
+    G, ψ = value_and_influence(genvar, M[:, 1:2])
+    check_against_ad(p -> det2(wcov(p, b)[1:2, 1:2]), (G, ψ), genvar(M[:, 1:2]))
+    @test G == genvar(M[:, 1:2])
+    G, ψ = value_and_influence(genvar, M[:, 2:2])           # one column: its variance
+    @test G == genvar(M[:, 2:2])
+    @test ψ ≈ influence(var, M[:, 2])
+    for x in (X, reshape(X, 3, 4, 3))                       # not a matrix: the variance of all elements
+        @test value_and_influence(genvar, x) == value_and_influence(var, x)
+    end
+    # A singular covariance: every centered observation lies in its column space, so moving mass
+    # onto it keeps the determinant at 0.
+    wcovof(p, A) = (Z = A .- sum(p .* A; dims = 1); b .* (Z' * (p .* Z)))
+    for Ms in ([M[:, 1:2] fill(2.0, N)], [M[:, 1] M[:, 1] M[:, 3]])
+        @test genvar(Ms) == 0
+        ψs = influence(genvar, Ms)
+        @test all(iszero, ψs)
+        @test ψs ≈ ad_influence(p -> det3(wcovof(p, Ms)), N) atol = 1.0e-12
+    end
+    Mn = copy(M)
+    Mn[2, 2] = NaN
+    for Ms in (Mn, M[1:1, :])                               # a NaN value, from a NaN or one row
+        Gn, ψn = value_and_influence(genvar, Ms)
+        @test isnan(Gn)
+        @test all(isnan, ψn)
+    end
+    Md = DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3)))
+    Gd, ψd = value_and_influence(genvar, Md)
+    @test Gd == genvar(Md)
+    @test ψd isa DimArray
+    @test dims(ψd) == (dims(Md, 1),)
+    @test parent(ψd) ≈ influence(genvar, M)
+    @test eltype(influence(genvar, Float32.(M))) === Float32
+    @inferred value_and_influence(genvar, M)
+    @inferred value_and_influence(genvar, X)
+    Mo = OffsetArray(M, -2, 5)
+    err = @test_throws Exception genvar(Mo)                 # its type depends on the Julia version
+    @test_throws typeof(err.value) influence(genvar, Mo)    # as in StatsBase
+    @test_throws MethodError influence(genvar, M; dims = 2)                   # StatsBase.genvar has no dims
+end
+
+@testset "totalvar" begin
+    trace(S) = sum(j -> S[j, j], axes(S, 1))
+    V, ψ = value_and_influence(totalvar, M)                 # the rows are the observations
+    check_against_ad(p -> trace(wcov(p, N / (N - 1))), (V, ψ), totalvar(M))
+    @test V == totalvar(M)
+    @test influence(totalvar, M[:, 2:2]) ≈ influence(var, M[:, 2])    # one column: its variance
+    for x in (X, reshape(X, 3, 4, 3))                       # not a matrix: the variance of all elements
+        @test value_and_influence(totalvar, x) == value_and_influence(var, x)
+    end
+    Md = DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3)))
+    ψd = influence(totalvar, Md)
+    @test ψd isa DimArray
+    @test dims(ψd) == (dims(Md, 1),)
+    @test parent(ψd) ≈ ψ
+    Mo = OffsetArray(M, -2, 5)
+    ψo = influence(totalvar, Mo)
+    @test axes(ψo) == (axes(Mo, 1),)
+    @test parent(ψo) ≈ ψ
+    @test eltype(influence(totalvar, Float32.(M))) === Float32
+    @inferred value_and_influence(totalvar, M)
+    @inferred value_and_influence(totalvar, X)
+    @test_throws MethodError influence(totalvar, M; dims = 2)    # StatsBase.totalvar has no dims
+end
+
+@testset "partialcor" begin
+    x, y = M[:, 1], M[:, 2]
+    # The correlation of the residuals of weighted least squares on `[1 Z]`, whose weighted
+    # means are 0.
+    function T(p, Z)
+        A = [ones(N) Z]
+        r(v) = v .- A * ((A' * (p .* A)) \ (A' * (p .* v)))
+        rx, ry = r(x), r(y)
+        return wmean(p, rx .* ry) / sqrt(wmean(p, rx .^ 2) * wmean(p, ry .^ 2))
+    end
+    for Z in (M[:, 3], [M[:, 3] rand(StableRNG(4), Gamma(2, 1), N)])   # one or two covariates
+        ρ, ψ = value_and_influence(partialcor, x, y, Z)              # observations are triples
+        check_against_ad(p -> T(p, Z), (ρ, ψ), partialcor(x, y, Z))
+        @test ρ == partialcor(x, y, Z)
+    end
+    Z = M[:, 3:3]
+    xd, yd = DimArray(x, Dim{:draw}(1:N)), DimArray(y, Dim{:draw}(1:N))
+    Zd = DimArray(Z, (Dim{:draw}(1:N), Dim{:covariate}(1:1)))
+    ψd = influence(partialcor, xd, yd, Zd)
+    @test ψd isa DimArray
+    @test dims(ψd) == dims(xd)
+    @test parent(ψd) ≈ influence(partialcor, x, y, Z)
+    zd = DimArray(vec(Z), Dim{:draw}(1:N))                  # one covariate, as a vector
+    @test parent(influence(partialcor, xd, yd, zd)) ≈ influence(partialcor, x, y, vec(Z))
+    @test eltype(influence(partialcor, Float32.(x), Float32.(y), Float32.(Z))) === Float32
+    ρm, ψm = value_and_influence(partialcor, Float32.(x), Float32.(y), Z)   # mixed precision
+    @test eltype(ψm) === typeof(ρm)
+    xn = copy(x)
+    xn[2] = NaN
+    # A NaN value, from a NaN, a constant covariate, or collinear covariates
+    for (xs, Zs) in ((xn, Z), (x, fill(2.0, N)), (x, [Z fill(2.0, N)]), (x, [Z Z]))
+        ρn, ψn = value_and_influence(partialcor, xs, y, Zs)
+        @test isnan(ρn)
+        @test all(isnan, ψn)
+    end
+    @inferred value_and_influence(partialcor, x, y, Z)
+    @inferred value_and_influence(partialcor, x, y, vec(Z))
+    @test_throws DimensionMismatch influence(partialcor, x, y[1:(end - 1)], Z)
+end
+
 @testset "cumulant" begin
     function T(p, c)
         m₂, m₃, m₄, m₅, m₆, m₇, m₈ = (wmean(p, (X .- c) .^ i) for i in 2:8)
@@ -330,8 +441,12 @@ end
     @test_throws DimensionMismatch influence(proportions, k, l[1:3])
 end
 
-@testset "weights are not a second variable" begin
+@testset "weights are not taken for data" begin
     w = fweights(ones(Int, N))
+    # Taken for the `x` of `mean(f, x)`, weights would make the data `f`, and calling it would
+    # throw a `MethodError` too, so check whose error it is.
+    err = @test_throws MethodError influence(mean, X, w)
+    @test err.value.f === value_and_influence
     @test_throws MethodError influence(cov, M, w)
     @test_throws MethodError influence(cor, M, w)
 end
