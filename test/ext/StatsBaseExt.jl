@@ -281,7 +281,9 @@ end
     @test eltype(influence(genvar, Float32.(M))) === Float32
     @inferred value_and_influence(genvar, M)
     @inferred value_and_influence(genvar, X)
-    @test_throws DimensionMismatch influence(genvar, OffsetArray(M, -2, 5))   # as in StatsBase
+    Mo = OffsetArray(M, -2, 5)
+    err = @test_throws Exception genvar(Mo)                 # its type depends on the Julia version
+    @test_throws typeof(err.value) influence(genvar, Mo)    # as in StatsBase
     @test_throws MethodError influence(genvar, M; dims = 2)                   # StatsBase.genvar has no dims
 end
 
