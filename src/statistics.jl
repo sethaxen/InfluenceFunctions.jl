@@ -196,8 +196,9 @@ function value_and_influence(
         density = QuantileSpacing(), kwargs...,
     )
     foreach(_check_level, p)
-    q = Statistics.quantile(f, x, p; kwargs...)    # Statistics computes it on f.(x)
-    return q, _quantile_influences(density, f.(x), q, p)
+    z = f.(x)
+    q = Statistics.quantile(z, p; kwargs...)
+    return q, _quantile_influences(density, z, q, p)
 end
 
 function _check_level(p)
@@ -241,8 +242,9 @@ end
 function value_and_influence(
         ::typeof(Statistics.median), f::Function, x::AbstractArray; density = QuantileSpacing()
     )
-    m = Statistics.median(f, x)    # Statistics computes it on f.(x)
-    return m, _quantile_influences(density, f.(x), m, oftype(float(m), 1 // 2))
+    z = f.(x)
+    m = Statistics.median(z)
+    return m, _quantile_influences(density, z, m, oftype(float(m), 1 // 2))
 end
 
 #######
