@@ -399,7 +399,8 @@ end
 function _residuals(v, zs, μs, S)
     μ = Statistics.mean(v)
     β = S \ [InfluenceFunctions._mean_cross(z, μz, v, μ) for (z, μz) in zip(zs, μs)]
-    e = v .- μ
+    e = similar(v, eltype(β))    # with the precision of `zs` too
+    e .= v .- μ
     for (z, μz, βⱼ) in zip(zs, μs, β)
         e .-= βⱼ .* (z .- μz)
     end

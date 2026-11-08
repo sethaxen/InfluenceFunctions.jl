@@ -324,6 +324,8 @@ end
     zd = DimArray(vec(Z), Dim{:draw}(1:N))                  # one covariate, as a vector
     @test parent(influence(partialcor, xd, yd, zd)) ≈ influence(partialcor, x, y, vec(Z))
     @test eltype(influence(partialcor, Float32.(x), Float32.(y), Float32.(Z))) === Float32
+    ρm, ψm = value_and_influence(partialcor, Float32.(x), Float32.(y), Z)   # mixed precision
+    @test eltype(ψm) === typeof(ρm)
     @inferred value_and_influence(partialcor, x, y, Z)
     @inferred value_and_influence(partialcor, x, y, vec(Z))
     @test_throws DimensionMismatch influence(partialcor, x, y[1:(end - 1)], Z)
