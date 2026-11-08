@@ -30,11 +30,11 @@ estimate:
      `ψ` has the same structure, and each element follows rules 1–3 as its estimator would
      on its own.
 
-Observations are the elements of `x`, except for `cov`, `cor`, `scattermat`, `genvar` and
-`totalvar` of a matrix, where they are its slices along `dims` (its rows, for `genvar` and
-`totalvar`), with the axes of `x` along `dims`. For forms with several data arguments, such
-as `cov(x, y)`, `proportions(x, y)` and `partialcor(x, y, Z)`, observations are pairs or
-triples, with the axes of `x`.
+Observations are the elements of `x`, except for a matrix passed to `cov`, `cor` or
+`scattermat`, where they are its slices along `dims`, or to `genvar` or `totalvar`, where they
+are its rows. An array of influence values then has the axes of `x` along that dimension. For
+forms with several data arguments, such as `cov(x, y)`, `proportions(x, y)` and
+`partialcor(x, y, Z)`, observations are pairs or triples, with the axes of `x`.
 
 Two conventions are used:
 
