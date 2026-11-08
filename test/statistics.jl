@@ -116,6 +116,11 @@ end
     end
     check_shapes(cov, X; vector_only = true)
     @test value_and_influence(cov, [1, 2, 6]) == (cov([1, 2, 6]), influence(var, [1, 2, 6]))
+    for x in (1:10, 0.1:0.1:2.0, Float64[])                 # where Statistics.var computes it otherwise
+        v, ψ = value_and_influence(cov, x)
+        @test isequal(v, cov(x))
+        @test ψ ≈ influence(var, collect(x))
+    end
     @test_throws MethodError influence(cov, X; dims = 1)    # Statistics.cov(x) has no dims
 end
 

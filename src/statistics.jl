@@ -72,9 +72,12 @@ end
 # cov
 #####
 
-# Statistics.cov of a vector is its variance.
+# Statistics.cov of a vector is its variance, though for ranges and empty vectors it is not
+# computed as Statistics.var computes it.
 function value_and_influence(::typeof(Statistics.cov), x::AbstractVector{<:Real}; corrected::Bool = true)
-    return value_and_influence(Statistics.var, x; corrected)
+    v = Statistics.cov(x; corrected)
+    b = _bessel_factor(typeof(v), length(x), corrected)
+    return v, b .* abs2.(x .- Statistics.mean(x)) .- v
 end
 
 function value_and_influence(
