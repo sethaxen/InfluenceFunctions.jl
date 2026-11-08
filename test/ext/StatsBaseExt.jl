@@ -240,6 +240,41 @@ end
     @test_throws MethodError influence(scattermat, M; density = nothing)
 end
 
+@testset "genvar" begin
+    det2(S) = S[1, 1] * S[2, 2] - S[1, 2] * S[2, 1]
+    det3(S) = S[1, 1] * det2(S[2:3, 2:3]) - S[1, 2] * det2(S[2:3, [1, 3]]) + S[1, 3] * det2(S[2:3, 1:2])
+    b = N / (N - 1)
+    G, ψ = value_and_influence(genvar, M)                   # the rows are the observations
+    check_against_ad(p -> det3(wcov(p, b)), (G, ψ), genvar(M))
+    @test G == genvar(M)
+    G, ψ = value_and_influence(genvar, M[:, 1:2])
+    check_against_ad(p -> det2(wcov(p, b)[1:2, 1:2]), (G, ψ), genvar(M[:, 1:2]))
+    @test G == genvar(M[:, 1:2])
+    G, ψ = value_and_influence(genvar, M[:, 2:2])           # one column: its variance
+    @test G == genvar(M[:, 2:2])
+    @test ψ ≈ influence(var, M[:, 2])
+    for x in (X, reshape(X, 3, 4, 3))                       # not a matrix: the variance of all elements
+        @test value_and_influence(genvar, x) == value_and_influence(var, x)
+    end
+    # A singular covariance: every observation lies in the span of the others, so moving mass
+    # onto it keeps the determinant at 0.
+    for Ms in ([M[:, 1:2] fill(2.0, N)], [M[:, 1] M[:, 1] M[:, 3]])
+        @test genvar(Ms) == 0
+        @test all(iszero, influence(genvar, Ms))
+    end
+    Md = DimArray(M, (Dim{:draw}(1:N), Dim{:param}(1:3)))
+    Gd, ψd = value_and_influence(genvar, Md)
+    @test Gd == genvar(Md)
+    @test ψd isa DimArray
+    @test dims(ψd) == (dims(Md, 1),)
+    @test parent(ψd) ≈ influence(genvar, M)
+    @test eltype(influence(genvar, Float32.(M))) === Float32
+    @inferred value_and_influence(genvar, M)
+    @inferred value_and_influence(genvar, X)
+    @test_throws DimensionMismatch influence(genvar, OffsetArray(M, -2, 5))   # as in StatsBase
+    @test_throws MethodError influence(genvar, M; dims = 2)                   # StatsBase.genvar has no dims
+end
+
 @testset "totalvar" begin
     trace(S) = sum(j -> S[j, j], axes(S, 1))
     V, ψ = value_and_influence(totalvar, M)                 # the rows are the observations

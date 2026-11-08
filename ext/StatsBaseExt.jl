@@ -332,6 +332,30 @@ function InfluenceFunctions.value_and_influence(
     return S, ψ
 end
 
+########
+# genvar
+########
+
+# The delta method on `cov`, with the gradient G C⁻¹ of the determinant at the symmetric C. If
+# G = 0, every observation lies in the span of C, which its adjugate maps to 0, so ψ = 0.
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.genvar), X::AbstractMatrix{<:Real}
+    )
+    G = StatsBase.genvar(X)
+    ψ = fill!(similar(X, typeof(G), axes(X, 1)), zero(G))
+    iszero(G) && return G, ψ
+    C, ψC = InfluenceFunctions.value_and_influence(Statistics.cov, X)
+    for (Aⱼₗ, ψⱼₗ) in zip(inv(C), ψC)
+        ψ .+= (G * Aⱼₗ) .* ψⱼₗ
+    end
+    return G, ψ
+end
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.genvar), x::AbstractArray{<:Real}
+    )
+    return InfluenceFunctions.value_and_influence(Statistics.var, x)
+end
+
 ##########
 # totalvar
 ##########

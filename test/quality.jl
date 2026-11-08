@@ -37,6 +37,8 @@ const EXT_CALLS = Any[
     (mean_and_cov, (M, 2), (;)),
     (scattermat, (M,), (;)),
     (scattermat, (M,), (; mean = 0, dims = 2)),
+    (genvar, (M,), (;)),
+    (genvar, (X,), (;)),
     (totalvar, (M,), (;)),
     (totalvar, (X,), (;)),
     (cumulant, (X, 4), (;)),

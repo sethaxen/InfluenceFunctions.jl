@@ -30,9 +30,9 @@ estimate:
      `ψ` has the same structure, and each element follows rules 1–3 as its estimator would
      on its own.
 
-Observations are the elements of `x`, except for `cov`, `cor`, `scattermat` and `totalvar` of
-a matrix, where they are its slices along `dims` (its rows, for `totalvar`), with the axes of
-`x` along `dims`. For two-argument forms such as `cov(x, y)` and `proportions(x, y)`,
+Observations are the elements of `x`, except for `cov`, `cor`, `scattermat`, `genvar` and
+`totalvar` of a matrix, where they are its slices along `dims` (its rows, for `genvar` and
+`totalvar`), with the axes of `x` along `dims`. For two-argument forms such as `cov(x, y)` and `proportions(x, y)`,
 observations are pairs, with the axes of `x`.
 
 Two conventions are used:
