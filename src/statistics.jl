@@ -215,9 +215,10 @@ end
 _quantile_influence(t, q, τ, fq) = (τ - (t <= q)) / fq
 
 # Influence values on the sample `y` of its quantiles `q` at levels `p`, from one density fit.
-# `q` and `p` are numbers, or matching containers of them.
-function _quantile_influences(density, y, q, p)
-    g = fit_density(density, y)
+# `q` and `p` are numbers, or matching containers of them. `w` is empty, or holds the weights
+# of a weighted quantile from StatsBaseExt.
+function _quantile_influences(density, y, q, p, w...)
+    g = fit_density(density, y, w...)
     return map((qₗ, pₗ) -> _quantile_influence.(y, qₗ, pₗ, _density_at_quantile(g, qₗ, pₗ)), q, p)
 end
 

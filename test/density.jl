@@ -11,6 +11,12 @@ using InfluenceFunctions: fit_density, HallSheatherBandwidth, _bandwidth, _densi
     @test_throws ArgumentError fit_density(42, X)
     @test_throws ArgumentError fit_density(:foo, X)
     VERSION >= v"1.11" && @test Base.ispublic(InfluenceFunctions, :fit_density)
+
+    w = rand(StableRNG(6), N)                                            # known densities ignore weights
+    @test fit_density(Normal(1, 2), X, w)(0.3) ≈ pdf(Normal(1, 2), 0.3)
+    @test fit_density(t -> 3.0, X, w)(1.0) == 3.0
+    @test_throws ArgumentError fit_density(ConstantDensity(0.4), X, w)   # no weighted method: not ignored
+    @test_throws ArgumentError fit_density(42, X, w)
 end
 
 @testset "HallSheatherBandwidth" begin
@@ -74,4 +80,11 @@ end
             @test _density_at_quantile(g, quantile(x, p), p) ≈ pdf(d, q) rtol = 0.1    # prototype: ≤ 0.041
         end
     end
+end
+
+@testset "QuantileSpacing with plain weights" begin
+    # Test in a fresh process: the other test dependencies may load StatsBase indirectly.
+    project = dirname(@__DIR__)
+    script = joinpath(@__DIR__, "core_weighted_density.jl")
+    @test success(`$(Base.julia_cmd()) --project=$project $script`)
 end
