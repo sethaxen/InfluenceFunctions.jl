@@ -40,21 +40,11 @@ function InfluenceFunctions.value_and_influence(
         corrected = nothing
     )
     C = Statistics.cov(x, w, dims; corrected)
-    return C, _cov_influences(C, x, w, dims, corrected)
-end
-
-# Influence of each entry of `C`, the weighted covariance matrix of the variables of `x`: with
-# `z` the variables centered at their weighted means and b the bias factor held fixed,
-# ψ = b zⱼ zₗ - C. StatsBase takes `corrected = nothing` as false, with a deprecation warning.
-function _cov_influences(C, x, w, dims, corrected)
-    b = _bessel_factor(eltype(C), w, something(corrected, false))
-    return InfluenceFunctions._with_variables(x, dims) do vars
-        μ = map(v -> Statistics.mean(v, w), vars)
-        return map(C, CartesianIndices(C)) do c, I
-            j, l = Tuple(I)
-            return b .* (vars[j] .- μ[j]) .* (vars[l] .- μ[l]) .- c
-        end
+    # StatsBase takes `corrected = nothing` as false, with a deprecation warning.
+    ψ = InfluenceFunctions._with_variables(x, dims) do vars
+        return InfluenceFunctions._cov_influences(C, vars, vars, something(corrected, false), w)
     end
+    return C, ψ
 end
 
 function InfluenceFunctions.value_and_influence(
@@ -62,12 +52,7 @@ function InfluenceFunctions.value_and_influence(
     )
     R = Statistics.cor(x, w, dims)
     ψ = InfluenceFunctions._with_variables(x, dims) do vars
-        μ = map(v -> Statistics.mean(v, w), vars)
-        σ = map((v, m) -> Statistics.std(v, w; mean = m, corrected = false), vars, μ)
-        return map(R, CartesianIndices(R)) do ρ, I
-            j, l = Tuple(I)
-            return InfluenceFunctions._cor_influence(vars[j], μ[j], σ[j], vars[l], μ[l], σ[l], ρ)
-        end
+        return InfluenceFunctions._cor_influences(R, vars, vars, w)
     end
     return R, ψ
 end
@@ -91,6 +76,7 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.mean_and_cov), x::DenseMatrix{<:Real}, w::StatsBase.AbstractWeights,
         dims::Int = 1; corrected = nothing
     )
-    m, C = StatsBase.mean_and_cov(x, w, dims; corrected)
-    return (m, C), (x .- m, _cov_influences(C, x, w, dims, corrected))
+    m, ψm = InfluenceFunctions.value_and_influence(Statistics.mean, x, w; dims)
+    C, ψC = InfluenceFunctions.value_and_influence(Statistics.cov, x, w, dims; corrected)
+    return (m, C), (ψm, ψC)
 end

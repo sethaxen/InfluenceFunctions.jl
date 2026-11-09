@@ -2,59 +2,42 @@
 # weighted var and std
 ######################
 
+# Here and below, StatsBase takes `corrected = nothing` as false, with a deprecation warning.
+
 function InfluenceFunctions.value_and_influence(
         ::typeof(Statistics.var), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights;
         mean = nothing, corrected = nothing
     )
-    return _var_value_and_influence(x, w, :, mean, corrected)
+    c = mean === nothing ? Statistics.mean(x, w) : mean
+    v = Statistics.var(x, w; mean = c, corrected)
+    return v, InfluenceFunctions._var_influence(x, c, v, something(corrected, false), w)
 end
 
 function InfluenceFunctions.value_and_influence(
         ::typeof(Statistics.var), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights, dim::Int;
         mean = nothing, corrected = nothing
     )
-    return _var_value_and_influence(x, w, dim, mean, corrected)
-end
-
-function _var_value_and_influence(x, w, dims, mean, corrected)
-    c = mean === nothing ? Statistics.mean(x, w; dims) : mean
-    v = dims isa Colon ? Statistics.var(x, w; mean = c, corrected) :
-        Statistics.var(x, w, dims; mean = c, corrected)
-    return v, _var_influence(x, w, c, v, corrected)
-end
-
-# ψ = b |x - c|² - v, with the bias factor b held fixed. StatsBase takes `corrected = nothing`
-# as false, with a deprecation warning.
-function _var_influence(x, w, c, v, corrected)
-    b = _bessel_factor(eltype(v), w, something(corrected, false))
-    return b .* abs2.(x .- c) .- v
+    c = mean === nothing ? Statistics.mean(x, w; dims = dim) : mean
+    v = Statistics.var(x, w, dim; mean = c, corrected)
+    return v, InfluenceFunctions._var_influence(x, c, v, something(corrected, false), w)
 end
 
 function InfluenceFunctions.value_and_influence(
         ::typeof(Statistics.std), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights;
         mean = nothing, corrected = nothing
     )
-    return _std_value_and_influence(x, w, :, mean, corrected)
+    c = mean === nothing ? Statistics.mean(x, w) : mean
+    s = Statistics.std(x, w; mean = c, corrected)
+    return s, InfluenceFunctions._std_influence(x, c, s, something(corrected, false), w)
 end
 
 function InfluenceFunctions.value_and_influence(
         ::typeof(Statistics.std), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights, dim::Int;
         mean = nothing, corrected = nothing
     )
-    return _std_value_and_influence(x, w, dim, mean, corrected)
-end
-
-function _std_value_and_influence(x, w, dims, mean, corrected)
-    c = mean === nothing ? Statistics.mean(x, w; dims) : mean
-    s = dims isa Colon ? Statistics.std(x, w; mean = c, corrected) :
-        Statistics.std(x, w, dims; mean = c, corrected)
-    return s, _std_influence(x, w, c, s, corrected)
-end
-
-# ψ = ψ_var / 2s, and ψ = 0 where s = 0, as for the unweighted std.
-function _std_influence(x, w, c, s, corrected)
-    b = _bessel_factor(eltype(s), w, something(corrected, false))
-    return @. ifelse(iszero(s), zero(s), (b * abs2(x - c) / s - s) / 2)
+    c = mean === nothing ? Statistics.mean(x, w; dims = dim) : mean
+    s = Statistics.std(x, w, dim; mean = c, corrected)
+    return s, InfluenceFunctions._std_influence(x, c, s, something(corrected, false), w)
 end
 
 ############################
@@ -96,7 +79,8 @@ function InfluenceFunctions.value_and_influence(
         corrected = nothing
     )
     μ, v = StatsBase.mean_and_var(x, w; corrected)
-    return (μ, v), (x .- μ, _var_influence(x, w, μ, v, corrected))
+    ψ = InfluenceFunctions._var_influence(x, μ, v, something(corrected, false), w)
+    return (μ, v), (x .- μ, ψ)
 end
 
 function InfluenceFunctions.value_and_influence(
@@ -104,7 +88,8 @@ function InfluenceFunctions.value_and_influence(
         corrected = nothing
     )
     μ, s = StatsBase.mean_and_std(x, w; corrected)
-    return (μ, s), (x .- μ, _std_influence(x, w, μ, s, corrected))
+    ψ = InfluenceFunctions._std_influence(x, μ, s, something(corrected, false), w)
+    return (μ, s), (x .- μ, ψ)
 end
 
 function InfluenceFunctions.value_and_influence(
@@ -112,7 +97,8 @@ function InfluenceFunctions.value_and_influence(
         dim::Int; corrected = nothing
     )
     μ, v = StatsBase.mean_and_var(x, w, dim; corrected)
-    return (μ, v), (x .- μ, _var_influence(x, w, μ, v, corrected))
+    ψ = InfluenceFunctions._var_influence(x, μ, v, something(corrected, false), w)
+    return (μ, v), (x .- μ, ψ)
 end
 
 function InfluenceFunctions.value_and_influence(
@@ -120,7 +106,8 @@ function InfluenceFunctions.value_and_influence(
         dim::Int; corrected = nothing
     )
     μ, s = StatsBase.mean_and_std(x, w, dim; corrected)
-    return (μ, s), (x .- μ, _std_influence(x, w, μ, s, corrected))
+    ψ = InfluenceFunctions._std_influence(x, μ, s, something(corrected, false), w)
+    return (μ, s), (x .- μ, ψ)
 end
 
 ########

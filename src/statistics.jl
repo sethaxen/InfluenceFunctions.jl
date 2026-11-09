@@ -35,8 +35,15 @@ function _var_value_and_influence(x, ::Nothing, corrected::Bool, dims)
 end
 function _var_value_and_influence(x, c, corrected::Bool, dims)
     v = Statistics.var(x; corrected, mean = c, dims)
-    b = _bessel_factor(eltype(v), _slice_length(x, v), corrected)
-    return v, b .* abs2.(x .- c) .- v
+    return v, _var_influence(x, c, v, corrected)
+end
+
+# Influence of the variance `v` of `x` about the center `c`: b |x - c|² - v, with the bias
+# factor b held fixed. Here and in the helpers below, `w` is empty, or holds the weights of a
+# weighted estimator from StatsBaseExt, which then set the bias factor and any means.
+function _var_influence(x, c, v, corrected, w...)
+    b = _bessel_factor(eltype(v), _slice_length(x, v), w..., corrected)
+    return b .* abs2.(x .- c) .- v
 end
 
 ##########
@@ -62,10 +69,14 @@ function _std_value_and_influence(x, ::Nothing, corrected::Bool, dims)
 end
 function _std_value_and_influence(x, c, corrected::Bool, dims)
     s = Statistics.std(x; corrected, mean = c, dims)
-    b = _bessel_factor(eltype(s), _slice_length(x, s), corrected)
-    # ψ = ψ_var / 2s, with ψ_var = b |x - c|² - s². Where s = 0, every value in the slice
-    # equals the center, so moving mass onto any of them changes nothing: ψ = 0, not 0/0.
-    return s, @. ifelse(iszero(s), zero(s), (b * abs2(x - c) / s - s) / 2)
+    return s, _std_influence(x, c, s, corrected)
+end
+
+# ψ = ψ_var / 2s, with ψ_var = b |x - c|² - s². Where s = 0, every value in the slice equals
+# the center, so moving mass onto any of them changes nothing: ψ = 0, not 0/0.
+function _std_influence(x, c, s, corrected, w...)
+    b = _bessel_factor(eltype(s), _slice_length(x, s), w..., corrected)
+    return @. ifelse(iszero(s), zero(s), (b * abs2(x - c) / s - s) / 2)
 end
 
 #####
@@ -76,8 +87,7 @@ end
 # computed as Statistics.var computes it.
 function value_and_influence(::typeof(Statistics.cov), x::AbstractVector{<:Real}; corrected::Bool = true)
     v = Statistics.cov(x; corrected)
-    b = _bessel_factor(typeof(v), length(x), corrected)
-    return v, b .* abs2.(x .- Statistics.mean(x)) .- v
+    return v, _var_influence(x, Statistics.mean(x), v, corrected)
 end
 
 function value_and_influence(
@@ -111,11 +121,11 @@ function value_and_influence(
 end
 
 # Influence of each entry of `C`, the covariance matrix of the variables `xs` and `ys`.
-function _cov_influences(C, xs, ys, corrected)
-    μx, μy = map(Statistics.mean, xs), map(Statistics.mean, ys)
+function _cov_influences(C, xs, ys, corrected, w...)
+    μx, μy = map(v -> Statistics.mean(v, w...), xs), map(v -> Statistics.mean(v, w...), ys)
     return map(C, CartesianIndices(C)) do c, I
         j, l = Tuple(I)
-        b = _bessel_factor(typeof(c), length(xs[j]), corrected)
+        b = _bessel_factor(typeof(c), length(xs[j]), w..., corrected)
         return b .* (xs[j] .- μx[j]) .* (ys[l] .- μy[l]) .- c
     end
 end
@@ -158,10 +168,10 @@ function value_and_influence(
 end
 
 # Influence of each entry of `R`, the correlation matrix of the variables `xs` and `ys`.
-function _cor_influences(R, xs, ys)
-    μx, μy = map(Statistics.mean, xs), map(Statistics.mean, ys)
-    σx = map((v, m) -> Statistics.std(v; mean = m, corrected = false), xs, μx)
-    σy = map((v, m) -> Statistics.std(v; mean = m, corrected = false), ys, μy)
+function _cor_influences(R, xs, ys, w...)
+    μx, μy = map(v -> Statistics.mean(v, w...), xs), map(v -> Statistics.mean(v, w...), ys)
+    σx = map((v, m) -> Statistics.std(v, w...; mean = m, corrected = false), xs, μx)
+    σy = map((v, m) -> Statistics.std(v, w...; mean = m, corrected = false), ys, μy)
     return map(R, CartesianIndices(R)) do ρ, I
         j, l = Tuple(I)
         return _cor_influence(xs[j], μx[j], σx[j], ys[l], μy[l], σy[l], ρ)
@@ -251,7 +261,8 @@ end
 # utils
 #######
 
-# Bessel factor `n/(n-1)` when `corrected`, else 1, in type `T`.
+# Bessel factor `n/(n-1)` when `corrected`, else 1, in type `T`. StatsBaseExt adds a method
+# that takes weights after `n`.
 _bessel_factor(::Type{T}, n::Integer, corrected::Bool) where {T} = corrected ? T(n) / T(n - 1) : one(T)
 
 # Number of observations in each slice of `x` reduced to one entry of the value `v`.
