@@ -41,8 +41,40 @@ using StatsBase
     @inferred value_and_influence(proportions, k, l, (4, 3))
     @test_throws MethodError influence(proportions, float.(k))      # as in StatsBase
     @test_throws MethodError influence(proportions, k, l, 1:3)      # as in StatsBase
-    @test_throws MethodError influence(proportions, k, pweights(ones(N)))
-    # Integer weights are integer arrays too, but they are weights, not a second variable.
-    @test_throws MethodError influence(proportions, k, fweights(ones(Int, N)))
     @test_throws DimensionMismatch influence(proportions, k, l[1:3])
+end
+
+@testset "weighted proportions" begin
+    k = rand(StableRNG(6), 1:4, N)
+    l = rand(StableRNG(7), 1:3, N)
+    for W in (fweights, pweights, aweights, weights)
+        w = W(WV)
+        v, ψ = value_and_influence(proportions, k, 1:4, w)
+        @test v == proportions(k, 1:4, w)
+        @test size(ψ) == size(v)
+        for c in 1:4
+            check_weighted_against_ad(u -> proportions(k, 1:4, W(u))[c], (v[c], ψ[c]), WV)
+        end
+        # Integer weights are integer arrays too, but they are weights, not a second variable.
+        @test value_and_influence(proportions, k, w) == (v, ψ)
+        @test value_and_influence(proportions, k, 4, w) == (v, ψ)
+
+        v, ψ = value_and_influence(proportions, k, l, (1:4, 1:3), w)
+        @test v == proportions(k, l, (1:4, 1:3), w)
+        @test size(ψ) == size(v)
+        for I in CartesianIndices(v)
+            check_weighted_against_ad(u -> proportions(k, l, (1:4, 1:3), W(u))[I], (v[I], ψ[I]), WV)
+        end
+        @test value_and_influence(proportions, k, l, w) == (v, ψ)
+        @test value_and_influence(proportions, k, l, (4, 3), w) == (v, ψ)
+        @test influence(proportions, k, l, 3, w) == ψ[1:3, 1:3]
+    end
+    w = pweights(WV)
+    @test value_and_influence(proportions, k, uweights(N)) == value_and_influence(proportions, k)
+    @test value_and_influence(proportions, k, l, uweights(N)) == value_and_influence(proportions, k, l)
+    km = reshape(k, 9, 4)                                   # weights over all elements
+    @test vec(influence(proportions, km, w)[1]) == influence(proportions, k, w)[1]
+    @inferred value_and_influence(proportions, k, w)
+    @inferred value_and_influence(proportions, k, l, w)
+    @test_throws DimensionMismatch influence(proportions, k, w[1:5])
 end
