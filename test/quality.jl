@@ -15,6 +15,10 @@ end
 # One representative call per method of the StatsBase extension.
 const EXT_CALLS = Any[
     (mean, (X, pweights(WV)), (;)),
+    (quantile, (X, pweights(WV), 0.3), (;)),
+    (quantile, (X, fweights(WV), [0.1, 0.9]), (;)),
+    (quantile, (X, uweights(N), 0.3), (;)),
+    (median, (X, pweights(WV)), (;)),
     (var, (X, pweights(WV)), (; corrected = true)),
     (var, (reshape(X, 9, 4), aweights(WV[1:9]), 1), (; corrected = true)),
     (std, (X, fweights(WV)), (; corrected = true)),

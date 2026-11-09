@@ -47,15 +47,17 @@ Two conventions are used:
     estimate at the estimated quantiles. These methods accept one keyword that `f` does
     not: `density`.
 
-Where StatsBase computes a smooth estimator with weights `w` (any `AbstractWeights`), they
-are accepted in the same position. Observation `i` then carries probability mass
-`w[i] / sum(w)`, and an influence value is the rate of change of the estimate as mass moves
-onto its observation with `sum(w)` held fixed. The bias correction that `corrected` selects
-for the type of weights is held fixed too, even for analytic weights, whose correction
-depends on how the weights are spread. Influence values are not multiplied by the weights:
-`sum(w .* ψ)` is about 0, and where StatsBase defines a weighted standard error of the mean
-(frequency, probability and unit weights), `StatsBase.sem(ψ, w)` estimates the standard
-error of the estimate, just as `sem(ψ)` does without weights.
+Where StatsBase computes an estimator with weights `w` (any `AbstractWeights`), they are
+accepted in the same position. Observation `i` then carries probability mass
+`w[i] / sum(w)`. For a smooth estimator, an influence value is the rate of change of the
+estimate as mass moves onto its observation with `sum(w)` held fixed. The bias correction
+that `corrected` selects for the type of weights is held fixed too, even for analytic
+weights, whose correction depends on how the weights are spread. For a weighted quantile or
+median, it is the plug-in estimate of the population influence function, with the density
+fitted under the weights (see [`fit_density`](@ref)). Influence values are not multiplied
+by the weights: `sum(w .* ψ)` is about 0, and where StatsBase defines a weighted standard
+error of the mean (frequency, probability and unit weights), `StatsBase.sem(ψ, w)`
+estimates the standard error of the estimate, just as `sem(ψ)` does without weights.
 
 Every other keyword must be one that `f` accepts for that call; anything else, like an
 estimator without a method, throws a `MethodError`.

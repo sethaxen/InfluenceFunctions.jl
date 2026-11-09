@@ -136,7 +136,7 @@ InfluenceFunctions.fit_density(d::ConstantDensity, x) = Returns(d.c)
 struct CountingDensity
     fits::Base.RefValue{Int}
 end
-function InfluenceFunctions.fit_density(d::CountingDensity, x)
+function InfluenceFunctions.fit_density(d::CountingDensity, x, w...)
     d.fits[] += 1
     return Returns(0.5)
 end
