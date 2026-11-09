@@ -249,7 +249,7 @@ end
 
 _squared_mass(w, m, W) = m^2
 _spacing_knots(w, xs, ws, cmass, W) = (_midpoints(cmass), xs)
-_midpoints(x) = @views (x[begin:end - 1] .+ x[begin + 1:end]) ./ 2
+_midpoints(x) = @views (x[begin:(end - 1)] .+ x[(begin + 1):end]) ./ 2
 
 function _midrank(data::_WeightedSpacingData, xs::AbstractVector, t)
     (; cmass) = data
