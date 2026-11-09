@@ -24,6 +24,14 @@ kurt(p, m) = wmean(p, (X .- m) .^ 4) / wmean(p, (X .- m) .^ 2)^2 - 3
         @test v0 ≈ v1
         @test ψ0[4:end] ≈ ψ1
     end
+    # No spread among the observations with weight: moving mass onto the one without changes
+    # the variance at a finite rate, so the standard deviation (its root) at an infinite one.
+    x0, w0 = [2.0, 2.0, 2.0, 5.0], [1, 2, 3, 0]
+    for W in (fweights, pweights, aweights)
+        v, ψ = value_and_influence(f, x0, W(w0); corrected = false)
+        @test iszero(v)
+        @test ψ == [0, 0, 0, f === var ? 9 : Inf]
+    end
     @test value_and_influence(f, X, uweights(N); corrected = true) == value_and_influence(f, X; corrected = true)
     w = pweights(WV)
     @test (@test_deprecated r"default to corrected=true" influence(f, X, w)) == influence(f, X, w; corrected = false)

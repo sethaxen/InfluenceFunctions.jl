@@ -72,11 +72,12 @@ function _std_value_and_influence(x, c, corrected::Bool, dims)
     return s, _std_influence(x, c, s, corrected)
 end
 
-# ψ = ψ_var / 2s, with ψ_var = b |x - c|² - s². Where s = 0, every value in the slice equals
-# the center, so moving mass onto any of them changes nothing: ψ = 0, not 0/0.
+# ψ = ψ_var / 2s, with ψ_var = b |x - c|² - s². Where s = 0, every value with mass equals the
+# center, and moving mass onto one of them changes nothing: ψ = 0, not 0/0. A value without
+# mass (zero weight) elsewhere makes s grow like the root of its mass, and ψ is Inf.
 function _std_influence(x, c, s, corrected, w...)
     b = _bessel_factor(eltype(s), _slice_length(x, s), w..., corrected)
-    return @. ifelse(iszero(s), zero(s), (b * abs2(x - c) / s - s) / 2)
+    return @. ifelse(iszero(s) & (x == c), zero(s), (b * abs2(x - c) / s - s) / 2)
 end
 
 #####
