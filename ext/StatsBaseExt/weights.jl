@@ -23,7 +23,7 @@ function _bias_factor(::Type{T}, w::StatsBase.ProbabilityWeights) where {T}
 end
 function _bias_factor(::Type{T}, w::StatsBase.AnalyticWeights) where {T}
     W = T(sum(w))
-    return W / (W - T(sum(abs2, w)) / W)
+    return inv(1 - sum(v -> abs2(T(v) / W), w))
 end
 
 ###############
