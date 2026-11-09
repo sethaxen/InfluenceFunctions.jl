@@ -8,7 +8,7 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(Statistics.var), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights;
         mean = nothing, corrected = nothing
     )
-    c = mean === nothing ? Statistics.mean(x, w) : mean
+    c = @something(mean, Statistics.mean(x, w))
     v = Statistics.var(x, w; mean = c, corrected)
     return v, InfluenceFunctions._var_influence(x, c, v, something(corrected, false), w)
 end
@@ -17,7 +17,7 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(Statistics.var), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights, dim::Int;
         mean = nothing, corrected = nothing
     )
-    c = mean === nothing ? Statistics.mean(x, w; dims = dim) : mean
+    c = @something(mean, Statistics.mean(x, w; dims = dim))
     v = Statistics.var(x, w, dim; mean = c, corrected)
     return v, InfluenceFunctions._var_influence(x, c, v, something(corrected, false), w)
 end
@@ -26,7 +26,7 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(Statistics.std), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights;
         mean = nothing, corrected = nothing
     )
-    c = mean === nothing ? Statistics.mean(x, w) : mean
+    c = @something(mean, Statistics.mean(x, w))
     s = Statistics.std(x, w; mean = c, corrected)
     return s, InfluenceFunctions._std_influence(x, c, s, something(corrected, false), w)
 end
@@ -35,7 +35,7 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(Statistics.std), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights, dim::Int;
         mean = nothing, corrected = nothing
     )
-    c = mean === nothing ? Statistics.mean(x, w; dims = dim) : mean
+    c = @something(mean, Statistics.mean(x, w; dims = dim))
     s = Statistics.std(x, w, dim; mean = c, corrected)
     return s, InfluenceFunctions._std_influence(x, c, s, something(corrected, false), w)
 end

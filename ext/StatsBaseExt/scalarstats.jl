@@ -88,7 +88,7 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.mad), x::AbstractArray{<:Real};
         center = nothing, normalize = nothing, density = InfluenceFunctions.QuantileSpacing(),
     )
-    m = center === nothing ? Statistics.median(x) : center
+    m = @something(center, Statistics.median(x))
     s = StatsBase.mad(x; center = m, normalize = false)
     k = normalize === false ? one(s) : _mad_constant(typeof(s))    # `nothing` means true in StatsBase 0.34
     τ = oftype(float(s), 1 // 2)

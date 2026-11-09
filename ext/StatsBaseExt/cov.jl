@@ -6,7 +6,7 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.scattermat), x::DenseMatrix{<:Real}; mean = nothing, dims::Int = 1
     )
     S = StatsBase.scattermat(x; mean, dims)
-    z = x .- (mean === nothing ? Statistics.mean(x; dims) : mean)
+    z = x .- @something(mean, Statistics.mean(x; dims))
     return S, _scattermat_influences(S, z, size(x, dims), dims)
 end
 
@@ -15,7 +15,7 @@ function InfluenceFunctions.value_and_influence(
         mean = nothing, dims::Int = 1
     )
     S = StatsBase.scattermat(x, w; mean, dims)
-    z = x .- (mean === nothing ? Statistics.mean(x, w; dims) : mean)
+    z = x .- @something(mean, Statistics.mean(x, w; dims))
     return S, _scattermat_influences(S, z, sum(w), dims)
 end
 

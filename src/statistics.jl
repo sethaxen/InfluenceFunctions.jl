@@ -20,7 +20,7 @@ function value_and_influence(
         ::typeof(Statistics.var), x::AbstractArray{<:Real};
         corrected::Bool = true, mean = nothing, dims = :
     )
-    return _var_value_and_influence(x, mean, corrected, dims)
+    return _var_value_and_influence(x, @something(mean, Statistics.mean(x; dims)), corrected, dims)
 end
 
 function value_and_influence(
@@ -30,9 +30,6 @@ function value_and_influence(
     return _var_value_and_influence(x, m, corrected, dims)
 end
 
-function _var_value_and_influence(x, ::Nothing, corrected::Bool, dims)
-    return _var_value_and_influence(x, Statistics.mean(x; dims), corrected, dims)
-end
 function _var_value_and_influence(x, c, corrected::Bool, dims)
     v = Statistics.var(x; corrected, mean = c, dims)
     return v, _var_influence(x, c, v, corrected)
@@ -54,7 +51,7 @@ function value_and_influence(
         ::typeof(Statistics.std), x::AbstractArray{<:Real};
         corrected::Bool = true, mean = nothing, dims = :
     )
-    return _std_value_and_influence(x, mean, corrected, dims)
+    return _std_value_and_influence(x, @something(mean, Statistics.mean(x; dims)), corrected, dims)
 end
 
 function value_and_influence(
@@ -64,9 +61,6 @@ function value_and_influence(
     return _std_value_and_influence(x, m, corrected, dims)
 end
 
-function _std_value_and_influence(x, ::Nothing, corrected::Bool, dims)
-    return _std_value_and_influence(x, Statistics.mean(x; dims), corrected, dims)
-end
 function _std_value_and_influence(x, c, corrected::Bool, dims)
     s = Statistics.std(x; corrected, mean = c, dims)
     return s, _std_influence(x, c, s, corrected)
