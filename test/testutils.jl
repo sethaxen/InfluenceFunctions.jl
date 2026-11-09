@@ -6,6 +6,7 @@ const X = rand(StableRNG(1), Gamma(3, 2), N)   # positive, skewed
 const C = 5.0                                  # fixed center for fixed-center estimators
 const D = Gamma(3, 2)                          # known density for quantile-type tests
 const M = [X (X .+ randn(StableRNG(2), N)) randn(StableRNG(3), N)]   # variables as columns
+const WV = rand(StableRNG(4), 1:4, N)          # integer weights, usable with every weight type
 
 wmean(p, v) = sum(p .* v)
 
@@ -29,6 +30,22 @@ function check_against_ad(T, (v, ψ), v_ref)
     @test T(fill(1 / n, n)) ≈ v_ref
     @test ψ ≈ ad_influence(T, n) rtol = 1.0e-10
     @test abs(sum(ψ)) ≤ 1.0e-10 * sum(abs, ψ)
+    return nothing
+end
+
+# Influence values of a weighted estimator by forward-mode AD. `G` maps the weight values `v`
+# to the estimate. Moving mass onto observation i with the total weight W held fixed changes
+# the weights at the rate W eᵢ - v, so ψᵢ = W ∂G/∂vᵢ - ∑ⱼ vⱼ ∂G/∂vⱼ.
+function ad_weighted_influence(G, v)
+    g = ForwardDiff.gradient(G, float.(v))
+    return sum(v) .* g .- sum(v .* g)
+end
+
+# Weighted smooth estimators: value, match with AD, sum-to-zero under the weights.
+function check_weighted_against_ad(G, (val, ψ), v)
+    @test val ≈ G(v)
+    @test ψ ≈ ad_weighted_influence(G, v) rtol = 1.0e-10
+    @test abs(sum(v .* ψ)) ≤ 1.0e-10 * sum(abs, v .* ψ)
     return nothing
 end
 
@@ -79,17 +96,32 @@ function check_shapes(f, x::AbstractVector, args...; vector_only = false, kwargs
     return nothing
 end
 
-# `dims`: the value is `f(x; dims)`, ψ has the axes of `x`, and the influence values of each
-# slice equal those of `f` applied to that slice alone. `extra` holds keywords that only
-# `value_and_influence` takes (e.g. `density`).
-function check_dims(f, x::AbstractArray; dims, extra = (;), kwargs...)
-    v, ψ = value_and_influence(f, x; dims, extra..., kwargs...)
-    @test v ≈ f(x; dims, kwargs...)
+# `dims`: the value is `f(x, args...; dims)`, ψ has the axes of `x`, and the influence values
+# of each slice equal those of `f` applied to that slice alone, with the same `args` (e.g.
+# weights along `dims`). `extra` holds keywords that only `value_and_influence` takes (e.g.
+# `density`).
+function check_dims(f, x::AbstractArray, args...; dims, extra = (;), kwargs...)
+    v, ψ = value_and_influence(f, x, args...; dims, extra..., kwargs...)
+    @test v ≈ f(x, args...; dims, kwargs...)
     @test axes(ψ) == axes(x)
     reduced = dims isa Colon ? (1:ndims(x)) : dims
     for I in CartesianIndices(axes(v))   # a single empty index when `v` is a scalar
         idx = ntuple(d -> d in reduced ? Colon() : I[d], ndims(x))
-        @test vec(ψ[idx...]) ≈ influence(f, vec(x[idx...]); extra..., kwargs...)
+        @test vec(ψ[idx...]) ≈ influence(f, vec(x[idx...]), args...; extra..., kwargs...)
+    end
+    return nothing
+end
+
+# As `check_dims`, for a weighted estimator that takes the dimension positionally after the
+# weights `w`, which apply along it: each slice has the influence values it has on its own,
+# with the same weights.
+function check_weighted_dims(f, x::AbstractArray, w, dim::Int; kwargs...)
+    v, ψ = value_and_influence(f, x, w, dim; kwargs...)
+    @test v ≈ f(x, w, dim; kwargs...)
+    @test axes(ψ) == axes(x)
+    for I in CartesianIndices(axes(v))
+        idx = ntuple(d -> d == dim ? Colon() : I[d], ndims(x))
+        @test vec(ψ[idx...]) ≈ influence(f, vec(x[idx...]), w; kwargs...)
     end
     return nothing
 end

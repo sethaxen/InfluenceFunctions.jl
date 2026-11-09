@@ -1,3 +1,45 @@
+######################
+# weighted var and std
+######################
+
+# Here and below, StatsBase takes `corrected = nothing` as false, with a deprecation warning.
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(Statistics.var), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights;
+        mean = nothing, corrected = nothing
+    )
+    c = @something(mean, Statistics.mean(x, w))
+    v = Statistics.var(x, w; mean = c, corrected)
+    return v, InfluenceFunctions._var_influence(x, c, v, something(corrected, false), w)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(Statistics.var), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights, dim::Int;
+        mean = nothing, corrected = nothing
+    )
+    c = @something(mean, Statistics.mean(x, w; dims = dim))
+    v = Statistics.var(x, w, dim; mean = c, corrected)
+    return v, InfluenceFunctions._var_influence(x, c, v, something(corrected, false), w)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(Statistics.std), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights;
+        mean = nothing, corrected = nothing
+    )
+    c = @something(mean, Statistics.mean(x, w))
+    s = Statistics.std(x, w; mean = c, corrected)
+    return s, InfluenceFunctions._std_influence(x, c, s, something(corrected, false), w)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(Statistics.std), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights, dim::Int;
+        mean = nothing, corrected = nothing
+    )
+    c = @something(mean, Statistics.mean(x, w; dims = dim))
+    s = Statistics.std(x, w, dim; mean = c, corrected)
+    return s, InfluenceFunctions._std_influence(x, c, s, something(corrected, false), w)
+end
+
 ############################
 # mean_and_var, mean_and_std
 ############################
@@ -32,6 +74,42 @@ function _mean_and_value_and_influence(f, x, dims, corrected)
     return (μ, v), (ψμ, ψ)
 end
 
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_var), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights;
+        corrected = nothing
+    )
+    μ, v = StatsBase.mean_and_var(x, w; corrected)
+    ψ = InfluenceFunctions._var_influence(x, μ, v, something(corrected, false), w)
+    return (μ, v), (x .- μ, ψ)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_std), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights;
+        corrected = nothing
+    )
+    μ, s = StatsBase.mean_and_std(x, w; corrected)
+    ψ = InfluenceFunctions._std_influence(x, μ, s, something(corrected, false), w)
+    return (μ, s), (x .- μ, ψ)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_var), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights,
+        dim::Int; corrected = nothing
+    )
+    μ, v = StatsBase.mean_and_var(x, w, dim; corrected)
+    ψ = InfluenceFunctions._var_influence(x, μ, v, something(corrected, false), w)
+    return (μ, v), (x .- μ, ψ)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.mean_and_std), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights,
+        dim::Int; corrected = nothing
+    )
+    μ, s = StatsBase.mean_and_std(x, w, dim; corrected)
+    ψ = InfluenceFunctions._std_influence(x, μ, s, something(corrected, false), w)
+    return (μ, s), (x .- μ, ψ)
+end
+
 ########
 # moment
 ########
@@ -39,18 +117,33 @@ end
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.moment), x::AbstractArray{<:Real}, k,
     )
-    return _moment_value_and_influence(x, k, Statistics.mean(x), true)
+    return _moment_value_and_influence(x, k, (), Statistics.mean(x), true)
 end
 
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.moment), x::AbstractArray{<:Real}, k, m::Real,
     )
-    return _moment_value_and_influence(x, k, m, false)
+    return _moment_value_and_influence(x, k, (), m, false)
 end
 
-function _moment_value_and_influence(x, k, c, center_est)
-    mₖ = StatsBase.moment(x, k, c)
-    mₖ₋₁ = center_est ? StatsBase.moment(x, k - 1, c) : zero(mₖ)
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.moment), x::AbstractArray{<:Real}, k, w::StatsBase.AbstractWeights,
+    )
+    return _moment_value_and_influence(x, k, (w,), Statistics.mean(x, w), true)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.moment), x::AbstractArray{<:Real}, k, w::StatsBase.AbstractWeights, m::Real,
+    )
+    return _moment_value_and_influence(x, k, (w,), m, false)
+end
+
+# In this and the helpers below, `w` is `()` or a 1-tuple of weights, splatted into StatsBase's
+# calls. Weights change only the moments: the influence functions are those of the weighted
+# empirical distribution.
+function _moment_value_and_influence(x, k, w, c, center_est)
+    mₖ = StatsBase.moment(x, k, w..., c)
+    mₖ₋₁ = center_est ? StatsBase.moment(x, k - 1, w..., c) : zero(mₖ)
     ψ = broadcast(x) do t
         d = t - c
         return _moment_influence(d^k, d, k, mₖ, mₖ₋₁, center_est)
@@ -71,19 +164,31 @@ _moment_influence(dᵏ, d, k, mₖ, mₖ₋₁, center_est) = dᵏ - mₖ - cent
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.skewness), x::AbstractArray{<:Real}
     )
-    return _skewness_value_and_influence(x, Statistics.mean(x), true)
+    return _skewness_value_and_influence(x, (), Statistics.mean(x), true)
 end
 
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.skewness), x::AbstractArray{<:Real}, m::Real
     )
-    return _skewness_value_and_influence(x, m, false)
+    return _skewness_value_and_influence(x, (), m, false)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.skewness), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights
+    )
+    return _skewness_value_and_influence(x, (w,), Statistics.mean(x, w), true)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.skewness), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights, m::Real
+    )
+    return _skewness_value_and_influence(x, (w,), m, false)
 end
 
 # g = m₃ / m₂^(3/2), so ψ = ψ₃ / m₂^(3/2) - (3g/2) ψ₂ / m₂.
-function _skewness_value_and_influence(x, c, center_est)
-    g = StatsBase.skewness(x, c)
-    m₂, m₃ = (StatsBase.moment(x, k, c) for k in 2:3)
+function _skewness_value_and_influence(x, w, c, center_est)
+    g = StatsBase.skewness(x, w..., c)
+    m₂, m₃ = (StatsBase.moment(x, k, w..., c) for k in 2:3)
     ψ = broadcast(x) do t
         d = t - c
         d² = d * d
@@ -101,19 +206,31 @@ end
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.kurtosis), x::AbstractArray{<:Real}
     )
-    return _kurtosis_value_and_influence(x, Statistics.mean(x), true)
+    return _kurtosis_value_and_influence(x, (), Statistics.mean(x), true)
 end
 
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.kurtosis), x::AbstractArray{<:Real}, m::Real
     )
-    return _kurtosis_value_and_influence(x, m, false)
+    return _kurtosis_value_and_influence(x, (), m, false)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.kurtosis), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights
+    )
+    return _kurtosis_value_and_influence(x, (w,), Statistics.mean(x, w), true)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.kurtosis), x::AbstractArray{<:Real}, w::StatsBase.AbstractWeights, m::Real
+    )
+    return _kurtosis_value_and_influence(x, (w,), m, false)
 end
 
 # Excess kurtosis κ = m₄ / m₂² - 3, so ψ = ψ₄ / m₂² - 2(κ + 3) ψ₂ / m₂.
-function _kurtosis_value_and_influence(x, c, center_est)
-    κ = StatsBase.kurtosis(x, c)
-    m₂, m₃ = (StatsBase.moment(x, k, c) for k in 2:3)
+function _kurtosis_value_and_influence(x, w, c, center_est)
+    κ = StatsBase.kurtosis(x, w..., c)
+    m₂, m₃ = (StatsBase.moment(x, k, w..., c) for k in 2:3)
     m₄ = (κ + 3) * m₂^2
     ψ = broadcast(x) do t
         d = t - c
@@ -133,14 +250,28 @@ function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.cumulant), x::AbstractArray{<:Real},
         k::Union{Integer, AbstractRange{<:Integer}}
     )
-    return _cumulant_value_and_influence(x, k, Statistics.mean(x), true)
+    return _cumulant_value_and_influence(x, k, (), Statistics.mean(x), true)
 end
 
 function InfluenceFunctions.value_and_influence(
         ::typeof(StatsBase.cumulant), x::AbstractArray{<:Real},
         k::Union{Integer, AbstractRange{<:Integer}}, m::Real
     )
-    return _cumulant_value_and_influence(x, k, m, false)
+    return _cumulant_value_and_influence(x, k, (), m, false)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.cumulant), x::AbstractArray{<:Real},
+        k::Union{Integer, AbstractRange{<:Integer}}, w::StatsBase.AbstractWeights
+    )
+    return _cumulant_value_and_influence(x, k, (w,), Statistics.mean(x, w), true)
+end
+
+function InfluenceFunctions.value_and_influence(
+        ::typeof(StatsBase.cumulant), x::AbstractArray{<:Real},
+        k::Union{Integer, AbstractRange{<:Integer}}, w::StatsBase.AbstractWeights, m::Real
+    )
+    return _cumulant_value_and_influence(x, k, (w,), m, false)
 end
 
 # Each cumulant's influence function is a polynomial in the deviation d = t - c, and a single
@@ -157,11 +288,11 @@ end
 #         ∑ⱼ₌₀ᵏ binomial(k, j) aⱼ dᵏ⁻ʲ,
 #     which also holds for κ₁ = c. With a given center the rate is (e^(sd) - sd) / G(s) - 1,
 #     and the extra -sd / G(s) cancels exactly the term in d.
-function _cumulant_value_and_influence(x, k, c, center_est)
+function _cumulant_value_and_influence(x, k, w, c, center_est)
     minimum(k) > 0 || throw(ArgumentError("Cumulant orders must be strictly positive."))
     K = maximum(k)
     # About a float center, integer data don't overflow. m[1] is not used.
-    m = [StatsBase.moment(x, i, float(c)) for i in 1:K]
+    m = [StatsBase.moment(x, i, w..., float(c)) for i in 1:K]
     a = similar(m, K + 1)    # a[j + 1] is aⱼ
     κ = similar(m)           # cumulants
     a[1] = 1
