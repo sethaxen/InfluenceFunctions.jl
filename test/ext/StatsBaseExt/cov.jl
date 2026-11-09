@@ -90,7 +90,8 @@ end
             if I[1] == I[2]                                 # 1 for any data
                 @test maximum(abs, ψ[I]) < 1.0e-12
             else
-                check_weighted_against_ad(u -> cor(x, W(u), dims)[I], (R[I], ψ[I]), WV)
+                G = u -> cov2cor(cov(x, W(u), dims; corrected = false))[I]
+                check_weighted_against_ad(G, (R[I], ψ[I]), WV)
             end
         end
     end

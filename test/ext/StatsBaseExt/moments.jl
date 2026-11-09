@@ -205,7 +205,8 @@ end
 @testset "weighted cumulant" begin
     for W in (fweights, pweights, aweights, weights), k in 1:6
         check_weighted_against_ad(u -> cumulant(X, k, W(u)), value_and_influence(cumulant, X, k, W(WV)), WV)
-        check_weighted_against_ad(u -> cumulant(X, k, W(u), C), value_and_influence(cumulant, X, k, W(WV), C), WV)
+        G = u -> cumulant(X, k, W(u), C + zero(eltype(u)))
+        check_weighted_against_ad(G, value_and_influence(cumulant, X, k, W(WV), C), WV)
     end
     w = pweights(WV)
     v, ψ = value_and_influence(cumulant, X, 2:2:6, w)
